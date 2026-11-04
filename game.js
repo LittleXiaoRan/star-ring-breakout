@@ -62,6 +62,7 @@ const ui = {
   settingsButton: byId("settings-btn"),
   settings: byId("settings-overlay"),
   settingsSoundToggle: byId("settings-sound-toggle"),
+  settingsLookToggle: byId("settings-look-toggle"),
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
@@ -519,6 +520,11 @@ class Game {
     try {
       this.autoFire = localStorage.getItem("star-ring-auto-fire") === "on";
     } catch {}
+    this.look = "classic";
+    try {
+      const savedLook = localStorage.getItem("star-ring-look");
+      if (savedLook === "classic" || savedLook === "67") this.look = savedLook;
+    } catch {}
     this.selectedMapId = "harbor";
     this.badges = [];
     try {
@@ -547,6 +553,7 @@ class Game {
     this.resizeObserver.observe(this.canvas);
     this.resize();
     this.updateSoundControl();
+    this.updateLookControl();
     this.updateAutoFireControl();
     this.updateLangControl();
     ui.menuBest.textContent = formatScore(this.highScore);
@@ -575,6 +582,15 @@ class Game {
       this.audio.setMode(button.dataset.soundMode);
       this.updateSoundControl();
     });
+    ui.settingsLookToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-look]");
+      if (!button) return;
+      this.look = button.dataset.look;
+      try {
+        localStorage.setItem("star-ring-look", this.look);
+      } catch {}
+      this.updateLookControl();
+    });
     ui.settingsAutoFireToggle.addEventListener("click", () => {
       this.autoFire = !this.autoFire;
       try {
@@ -598,6 +614,12 @@ class Game {
   updateSoundControl() {
     ui.settingsSoundToggle.querySelectorAll("[data-sound-mode]").forEach((button) => {
       button.setAttribute("aria-checked", String(button.dataset.soundMode === this.audio.mode));
+    });
+  }
+
+  updateLookControl() {
+    ui.settingsLookToggle.querySelectorAll("[data-look]").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.look === this.look));
     });
   }
 
