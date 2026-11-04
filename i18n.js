@@ -55,6 +55,7 @@ const I18N = {
     document.querySelectorAll("[data-en-title]").forEach((el) => {
       el.setAttribute("title", lang === "zh" ? el.dataset.zhTitle : el.dataset.enTitle);
     });
+    document.documentElement.classList.add("i18n-ready");
   },
 
   setLang(lang) {

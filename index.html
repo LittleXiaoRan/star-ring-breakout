@@ -7,6 +7,8 @@
   <meta name="description" content="星环突围：一款包含五波战斗、随机强化与首领战的原创网页街机游戏。">
   <title>星环突围</title>
   <link rel="stylesheet" href="style.css">
+  <style>html:not(.i18n-ready) body{visibility:hidden}</style>
+  <noscript><style>body{visibility:visible}</style></noscript>
   <script src="i18n.js" defer></script>
   <script src="game.js" defer></script>
 </head>
@@ -152,9 +154,13 @@
           <p class="eyebrow">SYSTEM SETTINGS</p>
           <h2 id="settings-title" data-en="Settings">设置</h2>
           <p class="panel-subtitle" data-en="Tune your experience, or read the control and map guide.">调整游戏体验，或查看操作与地图指南。</p>
-          <div class="setting-row">
+          <div class="setting-row stacked">
             <div><strong data-en="Sound">声音</strong><small data-en="Combat sound effects &amp; cues">战斗音效与提示音</small></div>
-            <button id="settings-sound-toggle" class="sound-switch" type="button" role="switch" aria-checked="true" aria-label="游戏声音" data-en-aria="Game sound"><i aria-hidden="true"></i><span>开启</span></button>
+            <div id="settings-sound-toggle" class="segmented" role="radiogroup" aria-label="游戏声音" data-en-aria="Game sound">
+              <button type="button" role="radio" aria-checked="false" data-sound-mode="none" data-en="None">无</button>
+              <button type="button" role="radio" aria-checked="true" data-sound-mode="standard" data-en="Standard">标准</button>
+              <button type="button" role="radio" aria-checked="false" data-sound-mode="67">67</button>
+            </div>
           </div>
           <div class="setting-row">
             <div><strong data-en="Auto-Fire">自动射击</strong><small data-en="Fire continuously toward the crosshair without holding">无需按住左键，朝准星方向持续开火</small></div>
@@ -162,7 +168,7 @@
           </div>
           <div class="setting-row">
             <div><strong data-en="Language">语言</strong><small data-en="Interface language">界面显示语言</small></div>
-            <button id="settings-lang-toggle" class="sound-switch" type="button" role="switch" aria-checked="false" aria-label="切换语言" data-en-aria="Toggle language"><i aria-hidden="true"></i><span id="settings-lang-label">中文</span></button>
+            <button id="settings-lang-toggle" class="lang-btn" type="button" aria-label="切换语言" data-en-aria="Toggle language"><span id="settings-lang-label">English</span></button>
           </div>
           <button id="help-btn" class="settings-help-btn" type="button"><div><strong data-en="Controls &amp; Map Help">操作与地图帮助</strong><small data-en="View controls and map guides">查看操作方法与各地图指南</small></div><span class="row-arrow" aria-hidden="true">›</span></button>
           <button id="settings-close-btn" class="primary-btn" type="button" data-en="Done">完成</button>

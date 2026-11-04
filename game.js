@@ -177,30 +177,37 @@ function resolveCircleRect(entity, radius, rect) {
 class AudioEngine {
   constructor() {
     this.context = null;
-    this.enabled = true;
+    this.master = null;
+    this.mode = "standard";
     try {
-      this.enabled = localStorage.getItem("star-ring-sound") !== "off";
+      const saved = localStorage.getItem("star-ring-sound");
+      if (saved === "none" || saved === "standard" || saved === "67") this.mode = saved;
+      else if (saved === "off") this.mode = "none";
     } catch {}
+    this.enabled = this.mode !== "none";
   }
 
   unlock() {
     if (!this.enabled) return;
     if (!this.context) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioContextClass) this.context = new AudioContextClass();
+      if (AudioContextClass) {
+        this.context = new AudioContextClass();
+        this.master = this.context.createGain();
+        this.master.gain.value = 9;
+        this.master.connect(this.context.destination);
+      }
     }
     if (this.context?.state === "suspended") this.context.resume();
   }
 
-  toggle() {
-    this.enabled = !this.enabled;
+  setMode(mode) {
+    this.mode = mode;
+    this.enabled = mode !== "none";
     try {
-      localStorage.setItem("star-ring-sound", this.enabled ? "on" : "off");
+      localStorage.setItem("star-ring-sound", mode);
     } catch {}
-    if (this.enabled) {
-      this.unlock();
-      this.tone(620, 0.08, "sine", 0.025, 880);
-    }
+    if (this.enabled) this.unlock();
   }
 
   tone(frequency, duration, type = "sine", volume = 0.025, endFrequency = frequency) {
@@ -216,17 +223,44 @@ class AudioEngine {
     gain.gain.setValueAtTime(volume, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     oscillator.connect(gain);
-    gain.connect(this.context.destination);
+    gain.connect(this.master);
     oscillator.start(now);
     oscillator.stop(now + duration);
   }
 
-  shoot() { this.tone(360, 0.045, "square", 0.009, 220); }
-  pickup() { this.tone(720, 0.065, "sine", 0.018, 1080); }
+  playFile(name) {
+    if (!this.enabled) return;
+    const audio = new Audio(`assets/sounds/67/${encodeURIComponent(name)}.mp3`);
+    audio.play().catch(() => {});
+  }
+
+  shoot() {
+    if (this.mode === "67") return this.playFile("发射子弹");
+    this.tone(360, 0.045, "square", 0.009, 220);
+  }
+  pickup() {
+    if (this.mode === "67") return this.playFile("捡到敌人的残骸");
+    this.tone(720, 0.065, "sine", 0.018, 1080);
+  }
   dash() { this.tone(180, 0.16, "sawtooth", 0.026, 720); }
-  hurt() { this.tone(150, 0.22, "sawtooth", 0.045, 55); }
+  hurt() {
+    if (this.mode === "67") return this.playFile("掉血");
+    this.tone(150, 0.22, "sawtooth", 0.045, 55);
+  }
   hit() { this.tone(210, 0.035, "square", 0.008, 130); }
   explode(size = 1) { this.tone(105 / size, 0.13, "sawtooth", 0.022, 45); }
+  kill(size = 1.5) {
+    if (this.mode === "67") return this.playFile("击败敌人");
+    this.tone(105 / size, 0.13, "sawtooth", 0.022, 45);
+  }
+  upgradeOpen() {
+    if (this.mode === "67") return this.playFile("弹出新能力框时");
+    this.tone(420, 0.18, "sine", 0.025, 840);
+  }
+  upgradeChosen() {
+    if (this.mode === "67") return this.playFile("选择新能力之后");
+    this.tone(520, 0.22, "sine", 0.035, 1040);
+  }
 }
 
 class Input {
@@ -479,8 +513,10 @@ class Game {
     ui.homeButton.addEventListener("click", () => this.goToMenu());
     ui.pauseButton.addEventListener("click", () => this.togglePause());
     ui.settingsButton.addEventListener("click", () => this.openSettings());
-    ui.settingsSoundToggle.addEventListener("click", () => {
-      this.audio.toggle();
+    ui.settingsSoundToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-sound-mode]");
+      if (!button) return;
+      this.audio.setMode(button.dataset.soundMode);
       this.updateSoundControl();
     });
     ui.settingsAutoFireToggle.addEventListener("click", () => {
@@ -504,8 +540,9 @@ class Game {
   }
 
   updateSoundControl() {
-    ui.settingsSoundToggle.setAttribute("aria-checked", String(this.audio.enabled));
-    ui.settingsSoundToggle.querySelector("span").textContent = this.audio.enabled ? I18N.t("hud.on") : I18N.t("hud.off");
+    ui.settingsSoundToggle.querySelectorAll("[data-sound-mode]").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.soundMode === this.audio.mode));
+    });
   }
 
   updateAutoFireControl() {
@@ -515,8 +552,7 @@ class Game {
 
   updateLangControl() {
     const isEn = I18N.lang === "en";
-    ui.settingsLangToggle.setAttribute("aria-checked", String(isEn));
-    ui.settingsLangToggle.querySelector("span").textContent = isEn ? "EN" : "中文";
+    ui.settingsLangToggle.querySelector("span").textContent = isEn ? "中文" : "English";
   }
 
   onLanguageChanged() {
@@ -1971,7 +2007,7 @@ class Game {
       this.spawnEnemy("mite", enemy.x + 12, enemy.y);
       this.waveTotal += 2;
     }
-    this.audio.explode(enemy.radius > 17 ? 1.2 : 1.8);
+    this.audio.kill(enemy.radius > 17 ? 1.2 : 1.8);
   }
 
   hurtPlayer(amount, { continuous = false, ramming = false } = {}) {
@@ -2157,7 +2193,7 @@ class Game {
     this.currentChoices = shuffled(available).slice(0, 3);
     this.renderUpgradeCards();
     ui.upgrade.hidden = false;
-    this.audio.tone(420, 0.18, "sine", 0.025, 840);
+    this.audio.upgradeOpen();
     ui.liveStatus.textContent = I18N.t("hud.chooseUpgrade");
   }
 
@@ -2183,7 +2219,7 @@ class Game {
     this.pendingUpgrades -= 1;
     this.burst(this.player.x, this.player.y, "#ad8cff", 22, 190, 4);
     this.spawnRing(this.player.x, this.player.y, 16, 90, "#ad8cff", 0.55);
-    this.audio.tone(520, 0.22, "sine", 0.035, 1040);
+    this.audio.upgradeChosen();
     if (this.pendingUpgrades > 0) {
       this.showUpgrade();
       return;
