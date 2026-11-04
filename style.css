@@ -186,6 +186,27 @@ body.game-active:not(.touch-mode) #game-canvas { cursor: none; }
   animation: fade-in 180ms ease-out;
 }
 .menu-overlay { background: radial-gradient(circle at 50% 45%, rgba(11, 29, 39, 0.52), rgba(4, 8, 15, 0.86)); }
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 15, 0.72);
+  backdrop-filter: blur(6px);
+}
+.loading-box { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.loading-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid rgba(100, 251, 210, 0.22);
+  border-top-color: #64fbd2;
+  border-radius: 50%;
+  animation: loading-spin 0.9s linear infinite;
+}
+@keyframes loading-spin { to { transform: rotate(360deg); } }
+.loading-text { margin: 0; color: #9db1c2; font-size: 13px; letter-spacing: 0.08em; }
 .panel { width: min(100%, 680px); padding: 34px; border: 1px solid rgba(137, 173, 196, 0.18); border-radius: 20px; background: var(--panel); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4); text-align: center; }
 .menu-panel { position: relative; width: min(100%, 760px); padding: 30px 44px 26px; overflow: hidden; }
 .menu-panel::before { content: ""; position: absolute; left: 15%; right: 15%; top: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--mint), transparent); }
@@ -432,7 +453,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
   .top-actions .utility-btn { flex: 1; min-width: 0; padding: 8px 6px; font-size: 11px; }
   #game-shell { display: contents; }
   #game-canvas { grid-column: 2; grid-row: 1 / 3; min-width: 0; min-height: 0; outline: 1px solid rgba(138, 168, 198, 0.2); outline-offset: -1px; border-radius: 16px; }
-  .screen-vignette, .overlay, .touch-controls.active { inset: 12px 12px 12px calc(var(--sidebar-width) + 24px); }
+  .screen-vignette, .overlay, .loading-overlay, .touch-controls.active { inset: 12px 12px 12px calc(var(--sidebar-width) + 24px); }
   .game-footer { display: none; }
   .hud { position: relative; inset: auto; grid-column: 1; grid-row: 2; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 2px; overflow-y: auto; pointer-events: auto; scrollbar-width: thin; scrollbar-color: #385166 transparent; }
   .hud > * { position: static; inset: auto; width: auto; max-width: none; flex-shrink: 0; transform: none; animation: none; }

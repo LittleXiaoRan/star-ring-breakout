@@ -36,6 +36,7 @@ const ui = {
   upgradeCards: byId("upgrade-cards"),
   pause: byId("pause-overlay"),
   result: byId("result-overlay"),
+  loadingOverlay: byId("loading-overlay"),
   resultEyebrow: byId("result-eyebrow"),
   resultTitle: byId("result-title"),
   resultSubtitle: byId("result-subtitle"),
@@ -234,6 +235,34 @@ class AudioEngine {
     audio.play().catch(() => {});
   }
 
+  preloadFiles() {
+    if (this.preloadPromise) return this.preloadPromise;
+    const names = ["发射子弹", "捡到敌人的残骸", "掉血", "击败敌人", "弹出新能力框时", "胜利", "失败", "选择新能力之后", "激光", "激光预备"];
+    this.preloadPromise = new Promise((resolve) => {
+      let pending = names.length;
+      let finished = false;
+      let timer = null;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        this.filesReady = true;
+        resolve();
+      };
+      timer = setTimeout(finish, 10000);
+      for (const name of names) {
+        const audio = new Audio(`assets/sounds/67/${encodeURIComponent(name)}.mp3`);
+        const settle = () => {
+          pending -= 1;
+          if (pending <= 0) finish();
+        };
+        audio.addEventListener("canplaythrough", settle, { once: true });
+        audio.addEventListener("error", settle, { once: true });
+      }
+    });
+    return this.preloadPromise;
+  }
+
   shoot() {
     if (this.mode === "67") return this.playFile("发射子弹");
     this.tone(360, 0.045, "square", 0.009, 220);
@@ -248,6 +277,33 @@ class AudioEngine {
     this.tone(150, 0.22, "sawtooth", 0.045, 55);
   }
   hit() { this.tone(210, 0.035, "square", 0.008, 130); }
+  laserPrep() {
+    if (this.mode === "67") {
+      this.stopLaserPrep();
+      const audio = new Audio(`assets/sounds/67/${encodeURIComponent("激光预备")}.mp3`);
+      this.prepAudio = audio;
+      audio.play().catch(() => {});
+      return;
+    }
+    this.tone(160, 0.65, "sawtooth", 0.022, 640);
+  }
+  stopLaserPrep() {
+    if (!this.prepAudio) return;
+    this.prepAudio.pause();
+    this.prepAudio.currentTime = 0;
+    this.prepAudio = null;
+  }
+  pauseLaserPrep() {
+    if (this.prepAudio) this.prepAudio.pause();
+  }
+  resumeLaserPrep() {
+    if (this.prepAudio) this.prepAudio.play().catch(() => {});
+  }
+  laser() {
+    this.stopLaserPrep();
+    if (this.mode === "67") return this.playFile("激光");
+    this.tone(880, 0.55, "sawtooth", 0.035, 90);
+  }
   explode(size = 1) { this.tone(105 / size, 0.13, "sawtooth", 0.022, 45); }
   kill(size = 1.5) {
     if (this.mode === "67") return this.playFile("击败敌人");
@@ -1138,7 +1194,7 @@ class Game {
           laser.state = "warning";
           laser.time = 6;
           laser.hit = false;
-          this.audio.tone(160, 0.65, "sawtooth", 0.022, 640);
+          this.audio.laserPrep();
           ui.liveStatus.textContent = I18N.t("hud.laserSoon");
         }
       } else {
@@ -1148,7 +1204,7 @@ class Game {
           laser.time = 1;
           this.shake = Math.max(this.shake, 16);
           this.spawnRing(this.world.width / 2, this.world.height / 2, 80, 1500, "#ffd166", 0.9);
-          this.audio.tone(880, 0.55, "sawtooth", 0.035, 90);
+          this.audio.laser();
           if (!laser.hit) {
             laser.hit = true;
             if (!this.isOnSafePlatform(this.player)) this.hurtPlayer(35);
@@ -1211,6 +1267,22 @@ class Game {
   }
 
   start() {
+    if (this.starting) return;
+    if (this.audio.mode === "67" && !this.audio.filesReady) {
+      this.starting = true;
+      this.audio.unlock();
+      ui.loadingOverlay.hidden = false;
+      this.audio.preloadFiles().then(() => {
+        this.starting = false;
+        ui.loadingOverlay.hidden = true;
+        this.beginRun();
+      });
+      return;
+    }
+    this.beginRun();
+  }
+
+  beginRun() {
     this.audio.unlock();
     this.input.reset();
     if (this.mapSelectOpen) {
@@ -1314,6 +1386,7 @@ class Game {
 
   goToMenu() {
     this.state = "menu";
+    this.audio.stopLaserPrep();
     this.input.reset();
     this.closeMapSelect();
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
@@ -2250,6 +2323,7 @@ class Game {
   pause() {
     if (this.state !== "playing") return;
     this.state = "paused";
+    this.audio.pauseLaserPrep();
     this.input.reset(this.input.touchMode);
     ui.pause.hidden = false;
     ui.touchControls.classList.remove("active");
@@ -2260,6 +2334,7 @@ class Game {
   resume() {
     if (this.state !== "paused" || this.mapSelectOpen) return;
     this.state = "playing";
+    this.audio.resumeLaserPrep();
     ui.pause.hidden = true;
     ui.pauseButton.textContent = I18N.t("hud.pause");
     ui.touchControls.classList.toggle("active", this.input.touchMode);
@@ -2282,6 +2357,7 @@ class Game {
   finish(victory) {
     if (["gameover", "victory", "menu"].includes(this.state)) return;
     this.state = victory ? "victory" : "gameover";
+    this.audio.stopLaserPrep();
     this.input.reset();
     ui.touchControls.classList.remove("active");
     ui.pauseButton.disabled = true;
