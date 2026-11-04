@@ -2,6 +2,8 @@
 
 const STORM_BELT_SPEED = 65;
 const TOUCH_AIM_MAX_TURN_TIME = 0.2;
+const LOOK67_IMG = new Image();
+LOOK67_IMG.src = "assets/67bullet.png";
 const byId = (id) => document.getElementById(id);
 const ui = {
   canvas: byId("game-canvas"),
@@ -2956,28 +2958,36 @@ class Game {
       context.stroke();
       context.setLineDash([]);
     }
-    context.rotate(player.facing);
-    context.shadowColor = "#64fbd2";
-    context.shadowBlur = player.dashTime > 0 ? 22 : 10;
-    context.beginPath();
-    context.moveTo(19, 0);
-    context.lineTo(-12, -11);
-    context.lineTo(-7, 0);
-    context.lineTo(-12, 11);
-    context.closePath();
-    context.fillStyle = "#64fbd2";
-    context.fill();
-    context.shadowBlur = 0;
-    context.strokeStyle = "#dcfff6";
-    context.lineWidth = 1.2;
-    context.stroke();
-    context.beginPath();
-    context.moveTo(4, 0);
-    context.lineTo(-7, -4);
-    context.lineTo(-7, 4);
-    context.closePath();
-    context.fillStyle = "#102c31";
-    context.fill();
+    if (this.look !== "67" || !(LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0)) {
+      context.rotate(player.facing);
+      context.shadowColor = "#64fbd2";
+      context.shadowBlur = player.dashTime > 0 ? 22 : 10;
+      context.beginPath();
+      context.moveTo(19, 0);
+      context.lineTo(-12, -11);
+      context.lineTo(-7, 0);
+      context.lineTo(-12, 11);
+      context.closePath();
+      context.fillStyle = "#64fbd2";
+      context.fill();
+      context.shadowBlur = 0;
+      context.strokeStyle = "#dcfff6";
+      context.lineWidth = 1.2;
+      context.stroke();
+      context.beginPath();
+      context.moveTo(4, 0);
+      context.lineTo(-7, -4);
+      context.lineTo(-7, 4);
+      context.closePath();
+      context.fillStyle = "#102c31";
+      context.fill();
+    } else {
+      context.shadowColor = "#4dd7ff";
+      context.shadowBlur = player.dashTime > 0 ? 26 : 12;
+      const size = 46;
+      context.drawImage(LOOK67_IMG, -size / 2, -size / 2, size, size);
+      context.shadowBlur = 0;
+    }
     context.restore();
   }
 
@@ -3111,6 +3121,13 @@ class Game {
 
   drawBullets(context) {
     context.lineCap = "round";
+    if (this.look === "67" && LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0) {
+      const size = 26;
+      for (const bullet of this.bullets) {
+        context.drawImage(LOOK67_IMG, bullet.x - size / 2, bullet.y - size / 2, size, size);
+      }
+      return;
+    }
     for (const bullet of this.bullets) {
       context.strokeStyle = bullet.critical ? "rgba(255, 209, 102, 0.65)" : "rgba(100, 251, 210, 0.5)";
       context.lineWidth = bullet.radius * 1.2;
