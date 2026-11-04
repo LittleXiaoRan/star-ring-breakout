@@ -238,7 +238,7 @@ class AudioEngine {
 
   preloadFiles() {
     if (this.preloadPromise) return this.preloadPromise;
-    const names = ["发射子弹", "捡到敌人的残骸", "掉血", "击败敌人", "弹出新能力框时", "胜利", "失败", "选择新能力之后", "激光", "激光预备"];
+    const names = ["发射子弹", "捡到敌人的残骸", "掉血", "击败敌人", "弹出新能力框时", "胜利", "失败", "选择新能力之后", "激光", "激光预备", "冲刺"];
     this.preloadPromise = new Promise((resolve) => {
       let pending = names.length;
       let finished = false;
@@ -272,7 +272,10 @@ class AudioEngine {
     if (this.mode === "67") return this.playFile("捡到敌人的残骸");
     this.tone(720, 0.065, "sine", 0.018, 1080);
   }
-  dash() { this.tone(180, 0.16, "sawtooth", 0.026, 720); }
+  dash() {
+    if (this.mode === "67") return this.playFile("冲刺");
+    this.tone(180, 0.16, "sawtooth", 0.026, 720);
+  }
   hurt() {
     if (this.mode === "67") return this.playFile("掉血");
     this.tone(150, 0.22, "sawtooth", 0.045, 55);
