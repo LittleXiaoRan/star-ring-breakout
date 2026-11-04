@@ -272,6 +272,10 @@ class AudioEngine {
     if (this.mode === "67") return this.playFile("捡到敌人的残骸");
     this.tone(720, 0.065, "sine", 0.018, 1080);
   }
+  buffPickup() {
+    if (this.mode === "67") return this.playFile("捡到敌人的残骸");
+    this.tone(540, 0.2, "sine", 0.03, 1080);
+  }
   dash() {
     if (this.mode === "67") return this.playFile("冲刺");
     this.tone(180, 0.16, "sawtooth", 0.026, 720);
@@ -2246,7 +2250,7 @@ class Game {
     ui.powerupToast.hidden = false;
     this.spawnRing(this.player.x, this.player.y, 16, 74, definition.color, 0.5);
     this.burst(this.player.x, this.player.y, definition.color, 18, 180, 3);
-    this.audio.tone(540, 0.2, "sine", 0.03, 1080);
+    this.audio.buffPickup();
     ui.liveStatus.textContent = I18N.t("hud.gotBuff", { name: I18N.t(definition.nameKey), s: definition.duration });
   }
 
