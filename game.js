@@ -4,6 +4,13 @@ const STORM_BELT_SPEED = 65;
 const TOUCH_AIM_MAX_TURN_TIME = 0.2;
 const LOOK67_IMG = new Image();
 LOOK67_IMG.src = "assets/67bullet.png";
+const LOOK67_PLAYER_IMG = new Image();
+LOOK67_PLAYER_IMG.src = "assets/67player.png";
+const LOOK67_PLAYER_SIZE = 46;
+const LOOK67_BULLET_SIZE = 15;
+// 67-shooter 里子弹相对人物图的位置（#bullet: left 34.7% / top 44.6% / width 32.2%），换算成以人物中心为原点的嘴部偏移
+const LOOK67_MUZZLE_X = 0.37;
+const LOOK67_MUZZLE_Y = 4.82;
 const byId = (id) => document.getElementById(id);
 const ui = {
   canvas: byId("game-canvas"),
@@ -516,6 +523,8 @@ class Game {
     this.pickups = [];
     this.powerups = [];
     this.obstacles = [];
+    this.flow = null;
+    this.flowTimer = 0;
     this.powerupPoints = [];
     this.particles = [];
     this.rings = [];
@@ -765,6 +774,147 @@ class Game {
     return collided;
   }
 
+  buildFlowField() {
+    const cell = 48;
+    const cols = Math.ceil(this.world.width / cell);
+    const rows = Math.ceil(this.world.height / cell);
+    const size = cols * rows;
+    const margin = 24;
+    const blocked = new Uint8Array(size);
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const x0 = c * cell;
+        const y0 = r * cell;
+        const x1 = Math.min(x0 + cell, this.world.width);
+        const y1 = Math.min(y0 + cell, this.world.height);
+        for (const obstacle of this.obstacles) {
+          if (x1 > obstacle.x - margin && x0 < obstacle.x + obstacle.width + margin && y1 > obstacle.y - margin && y0 < obstacle.y + obstacle.height + margin) {
+            blocked[r * cols + c] = 1;
+            break;
+          }
+        }
+      }
+    }
+    const pc = clamp(Math.floor(this.player.x / cell), 0, cols - 1);
+    const pr = clamp(Math.floor(this.player.y / cell), 0, rows - 1);
+    const start = pr * cols + pc;
+    blocked[start] = 0;
+    const dist = new Int32Array(size);
+    dist.fill(-1);
+    dist[start] = 0;
+    const queue = [start];
+    let head = 0;
+    while (head < queue.length) {
+      const index = queue[head];
+      head += 1;
+      const c = index % cols;
+      const r = (index / cols) | 0;
+      const next = dist[index] + 1;
+      if (c > 0 && !blocked[index - 1] && dist[index - 1] < 0) { dist[index - 1] = next; queue.push(index - 1); }
+      if (c < cols - 1 && !blocked[index + 1] && dist[index + 1] < 0) { dist[index + 1] = next; queue.push(index + 1); }
+      if (r > 0 && !blocked[index - cols] && dist[index - cols] < 0) { dist[index - cols] = next; queue.push(index - cols); }
+      if (r < rows - 1 && !blocked[index + cols] && dist[index + cols] < 0) { dist[index + cols] = next; queue.push(index + cols); }
+    }
+    this.flow = { cols, rows, cell, dist };
+  }
+
+  flowSample(x, y) {
+    const flow = this.flow;
+    const fx = x / flow.cell;
+    const fy = y / flow.cell;
+    const c0 = clamp(Math.floor(fx), 0, flow.cols - 1);
+    const r0 = clamp(Math.floor(fy), 0, flow.rows - 1);
+    const c1 = Math.min(c0 + 1, flow.cols - 1);
+    const r1 = Math.min(r0 + 1, flow.rows - 1);
+    const tx = fx - c0;
+    const ty = fy - r0;
+    const value = (d) => (d < 0 ? 1e6 : d);
+    const top = value(flow.dist[r0 * flow.cols + c0]) * (1 - tx) + value(flow.dist[r0 * flow.cols + c1]) * tx;
+    const bottom = value(flow.dist[r1 * flow.cols + c0]) * (1 - tx) + value(flow.dist[r1 * flow.cols + c1]) * tx;
+    return top * (1 - ty) + bottom * ty;
+  }
+
+  flowDirection(x, y) {
+    if (!this.flow) return null;
+    const eps = 20;
+    const gx = this.flowSample(x + eps, y) - this.flowSample(x - eps, y);
+    const gy = this.flowSample(x, y + eps) - this.flowSample(x, y - eps);
+    const length = Math.hypot(gx, gy);
+    if (length < 0.001) return null;
+    return { nx: -gx / length, ny: -gy / length };
+  }
+
+  hasLineOfSight(x0, y0, x1, y1, clearance) {
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 24));
+    for (let i = 1; i < steps; i += 1) {
+      const t = i / steps;
+      const px = x0 + (x1 - x0) * t;
+      const py = y0 + (y1 - y0) * t;
+      for (const obstacle of this.obstacles) {
+        if (px > obstacle.x - clearance && px < obstacle.x + obstacle.width + clearance && py > obstacle.y - clearance && py < obstacle.y + obstacle.height + clearance) return false;
+      }
+    }
+    return true;
+  }
+
+  steerAroundObstacles(enemy, nx, ny, dt) {
+    if (this.obstacles.length === 0 && this.orbiters.length === 0) return { nx, ny };
+    let baseAngle;
+    if (this.obstacles.length > 0) {
+      const clear = this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, enemy.radius + 14);
+      if (clear) {
+        baseAngle = Math.atan2(ny, nx);
+      } else {
+        const flow = this.flowDirection(enemy.x, enemy.y);
+        baseAngle = flow ? Math.atan2(flow.ny, flow.nx) : Math.atan2(ny, nx);
+      }
+    } else {
+      baseAngle = Math.atan2(ny, nx);
+    }
+    if (enemy.smoothAngle === undefined) {
+      enemy.smoothAngle = baseAngle;
+    } else {
+      let difference = baseAngle - enemy.smoothAngle;
+      difference = Math.atan2(Math.sin(difference), Math.cos(difference));
+      enemy.smoothAngle += difference * Math.min(1, dt * 9);
+    }
+    const base = enemy.smoothAngle;
+    const lookahead = Math.min(96, 52 + enemy.speed * 0.22);
+    const clearance = enemy.radius + 10;
+    let bestAngle = base;
+    let bestScore = Infinity;
+    for (const offset of [0, 0.28, -0.28, 0.55, -0.55, 0.82, -0.82, 1.1, -1.1, 1.4, -1.4]) {
+      const angle = base + offset;
+      const ca = Math.cos(angle);
+      const sa = Math.sin(angle);
+      let minClear = Infinity;
+      for (let step = 1; step <= 4; step += 1) {
+        const px = enemy.x + ca * lookahead * step / 4;
+        const py = enemy.y + sa * lookahead * step / 4;
+        for (const obstacle of this.obstacles) {
+          const cx = clamp(px, obstacle.x, obstacle.x + obstacle.width);
+          const cy = clamp(py, obstacle.y, obstacle.y + obstacle.height);
+          const distance = Math.hypot(px - cx, py - cy) - clearance;
+          if (distance < minClear) minClear = distance;
+        }
+        for (const orbiter of this.orbiters) {
+          const position = this.orbiterPosition(orbiter);
+          const distance = Math.hypot(px - position.x, py - position.y) - orbiter.radius - clearance;
+          if (distance < minClear) minClear = distance;
+        }
+      }
+      const angleCost = Math.abs(offset) / Math.PI * 0.55;
+      const collisionCost = minClear < 0 ? 2.4 + (-minClear) * 0.07 : 0;
+      const marginCost = minClear >= 0 ? Math.max(0, 1 - minClear / 14) * 0.18 : 0;
+      const score = angleCost + collisionCost + marginCost;
+      if (score < bestScore) {
+        bestScore = score;
+        bestAngle = angle;
+      }
+    }
+    return { nx: Math.cos(bestAngle), ny: Math.sin(bestAngle) };
+  }
+
   isOnSafePlatform(entity) {
     return this.safePlatforms.some((platform) => entity.x >= platform.x && entity.x <= platform.x + platform.width && entity.y >= platform.y && entity.y <= platform.y + platform.height);
   }
@@ -987,6 +1137,8 @@ class Game {
 
   createMap() {
     this.obstacles = [];
+    this.flow = null;
+    this.flowTimer = 0;
     this.safePlatforms = [];
     this.orbiters = [];
     this.wells = [];
@@ -1519,6 +1671,13 @@ class Game {
     if (this.state !== "playing") return;
     this.updatePlayer(dt);
     this.updateSpawning(dt);
+    if (this.obstacles.length > 0) {
+      this.flowTimer -= dt;
+      if (this.flowTimer <= 0) {
+        this.buildFlowField();
+        this.flowTimer = 0.25;
+      }
+    }
     this.updateEnemies(dt);
     if (this.state !== "playing") return;
     this.updateBullets(dt);
@@ -1627,10 +1786,13 @@ class Game {
     for (let i = 0; i < count; i += 1) {
       const shotAngle = angle + (i - (count - 1) / 2) * 0.115;
       const critical = Math.random() < player.critChance;
-      const nose = player.radius + 8;
+      const look67 = this.look === "67";
+      const nose = look67 ? 0 : player.radius + 8;
+      const originX = look67 ? player.x + LOOK67_MUZZLE_X : player.x;
+      const originY = look67 ? player.y + LOOK67_MUZZLE_Y : player.y;
       this.bullets.push({
-        x: player.x + Math.cos(shotAngle) * nose,
-        y: player.y + Math.sin(shotAngle) * nose,
+        x: originX + Math.cos(shotAngle) * nose,
+        y: originY + Math.sin(shotAngle) * nose,
         vx: Math.cos(shotAngle) * player.bulletSpeed,
         vy: Math.sin(shotAngle) * player.bulletSpeed,
         radius: (critical ? 5 : 3.5) + (player.buffs.double > 0 ? 1.5 : 0),
@@ -1797,15 +1959,19 @@ class Game {
         const nx = targetDx / targetDistance;
         const ny = targetDy / targetDistance;
         if (enemy.type === "chaser" || enemy.type === "splitter" || enemy.type === "mite") {
+          const steer = this.steerAroundObstacles(enemy, nx, ny, dt);
           const wobble = enemy.type === "splitter" && this.map.id !== "gravity" ? Math.sin(this.runTime * 2 + enemy.id) * 0.35 : 0;
-          enemy.x += (nx - ny * wobble) * enemy.speed * dt * slowFactor;
-          enemy.y += (ny + nx * wobble) * enemy.speed * dt * slowFactor;
+          enemy.x += (steer.nx - steer.ny * wobble) * enemy.speed * dt * slowFactor;
+          enemy.y += (steer.ny + steer.nx * wobble) * enemy.speed * dt * slowFactor;
         } else if (enemy.type === "shooter") {
           let direction = 0;
           if (distance > 270) direction = 1;
           else if (distance < 175) direction = -1;
-          const sx = direction === 1 ? nx : dx / distance;
-          const sy = direction === 1 ? ny : dy / distance;
+          const baseX = direction === 1 ? nx : dx / distance;
+          const baseY = direction === 1 ? ny : dy / distance;
+          const steer = direction === 0 ? { nx: 0, ny: 0 } : this.steerAroundObstacles(enemy, baseX, baseY, dt);
+          const sx = steer.nx;
+          const sy = steer.ny;
           const strafe = this.map.id === "gravity" && direction === 1 ? 0 : Math.sin(this.runTime * 1.4 + enemy.id) * 0.6;
           enemy.x += (sx * direction - sy * strafe) * enemy.speed * dt * slowFactor;
           enemy.y += (sy * direction + sx * strafe) * enemy.speed * dt * slowFactor;
@@ -1816,8 +1982,9 @@ class Game {
           }
         } else if (enemy.type === "dasher") {
           if (enemy.state === "hunt") {
-            enemy.x += nx * enemy.speed * dt * slowFactor;
-            enemy.y += ny * enemy.speed * dt * slowFactor;
+            const steer = this.steerAroundObstacles(enemy, nx, ny, dt);
+            enemy.x += steer.nx * enemy.speed * dt * slowFactor;
+            enemy.y += steer.ny * enemy.speed * dt * slowFactor;
             enemy.cooldown -= dt;
             const clearCharge = this.map.id !== "gravity" || this.portals.every((portal, index) => index === enemy.navigationPortal || (enemy.portalCooldown > 0 && index === enemy.portalExitIndex) || !segmentHitsCircle(enemy.x, enemy.y, player.x, player.y, portal.x, portal.y, enemy.radius + 28));
             if (enemy.cooldown <= 0 && distance < 370 && clearCharge) {
@@ -2958,7 +3125,7 @@ class Game {
       context.stroke();
       context.setLineDash([]);
     }
-    if (this.look !== "67" || !(LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0)) {
+    if (this.look !== "67" || !(LOOK67_PLAYER_IMG.complete && LOOK67_PLAYER_IMG.naturalWidth > 0)) {
       context.rotate(player.facing);
       context.shadowColor = "#64fbd2";
       context.shadowBlur = player.dashTime > 0 ? 22 : 10;
@@ -2984,8 +3151,9 @@ class Game {
     } else {
       context.shadowColor = "#4dd7ff";
       context.shadowBlur = player.dashTime > 0 ? 26 : 12;
-      const size = 46;
-      context.drawImage(LOOK67_IMG, -size / 2, -size / 2, size, size);
+      const size = LOOK67_PLAYER_SIZE;
+      const height = LOOK67_PLAYER_IMG.naturalHeight / LOOK67_PLAYER_IMG.naturalWidth * size;
+      context.drawImage(LOOK67_PLAYER_IMG, -size / 2, -height / 2, size, height);
       context.shadowBlur = 0;
     }
     context.restore();
@@ -3122,7 +3290,7 @@ class Game {
   drawBullets(context) {
     context.lineCap = "round";
     if (this.look === "67" && LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0) {
-      const size = 26;
+      const size = LOOK67_BULLET_SIZE;
       for (const bullet of this.bullets) {
         context.drawImage(LOOK67_IMG, bullet.x - size / 2, bullet.y - size / 2, size, size);
       }
