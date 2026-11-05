@@ -13,6 +13,18 @@ const DUDU_IMGS = ["1.png", "2.png", "3.png"].map((name) => {
   img.src = `assets/images/小怪嘟嘟/${name}`;
   return img;
 });
+const loadImg = (src) => {
+  const img = new Image();
+  img.src = src;
+  return img;
+};
+const ENEMY67_IMG = {
+  dasherIdle: loadImg("assets/images/冲刺者/冲刺突袭者正常.png"),
+  dasherDash: loadImg("assets/images/冲刺者/冲次突袭者冲刺.png"),
+  shooter: loadImg("assets/images/射击者/射击者.png"),
+  splitter: loadImg("assets/images/分裂者/大.png"),
+  mite: loadImg("assets/images/分裂者/小.png")
+};
 // 67-shooter 里子弹相对人物图的位置（#bullet: left 34.7% / top 44.6% / width 32.2%），换算成以人物中心为原点的嘴部偏移
 const LOOK67_MUZZLE_X = 0.37;
 const LOOK67_MUZZLE_Y = 4.82;
@@ -202,6 +214,7 @@ class AudioEngine {
       else if (saved === "off") this.mode = "none";
     } catch {}
     this.enabled = this.mode !== "none";
+    this.preloaded = {};
   }
 
   unlock() {
@@ -279,6 +292,13 @@ class AudioEngine {
     return this.preloadPromise;
   }
 
+  preloadOne(name) {
+    if (this.preloaded[name]) return;
+    const audio = new Audio(`assets/sounds/67/${encodeURIComponent(name)}.mp3`);
+    audio.preload = "auto";
+    this.preloaded[name] = audio;
+  }
+
   shoot() {
     if (this.mode === "67") return this.playFile("发射子弹");
     this.tone(360, 0.045, "square", 0.009, 220);
@@ -301,14 +321,11 @@ class AudioEngine {
   }
   hit() { this.tone(210, 0.035, "square", 0.008, 130); }
   laserPrep() {
-    if (this.mode === "67") {
-      this.stopLaserPrep();
-      const audio = new Audio(`assets/sounds/67/${encodeURIComponent("激光预备")}.mp3`);
-      this.prepAudio = audio;
-      audio.play().catch(() => {});
-      return;
-    }
-    this.tone(160, 0.65, "sawtooth", 0.022, 640);
+    if (!this.enabled) return;
+    this.stopLaserPrep();
+    const audio = new Audio(`assets/sounds/67/${encodeURIComponent("激光预备")}.mp3`);
+    this.prepAudio = audio;
+    audio.play().catch(() => {});
   }
   stopLaserPrep() {
     if (!this.prepAudio) return;
@@ -324,8 +341,7 @@ class AudioEngine {
   }
   laser() {
     this.stopLaserPrep();
-    if (this.mode === "67") return this.playFile("激光");
-    this.tone(880, 0.55, "sawtooth", 0.035, 90);
+    this.playFile("激光");
   }
   explode(size = 1) { this.tone(105 / size, 0.13, "sawtooth", 0.022, 45); }
   kill(size = 1.5) {
@@ -1309,7 +1325,10 @@ class Game {
         }
       }
       if (damageTick && vent.state === "active") {
-        if (!this.isOnSafePlatform(this.player)) this.hurtPlayer(3, { continuous: true });
+        if (!this.isOnSafePlatform(this.player)) {
+          const dist = Math.hypot(this.player.x - vent.x, this.player.y - vent.y);
+          this.hurtPlayer(6 - 4 * clamp(dist / 1100, 0, 1), { continuous: true });
+        }
         if (this.state !== "playing") return;
         for (const enemy of this.enemies) {
           if (!enemy.dead && enemy.spawnIn <= 0 && !this.isOnSafePlatform(enemy)) this.damageEnemy(enemy, 3);
@@ -1466,6 +1485,8 @@ class Game {
 
   start() {
     if (this.starting) return;
+    this.audio.preloadOne("激光");
+    this.audio.preloadOne("激光预备");
     if (this.audio.mode === "67" && !this.audio.filesReady) {
       this.starting = true;
       this.audio.unlock();
@@ -2160,7 +2181,7 @@ class Game {
     }
     if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) this.hurtPlayer(18);
     this.shake = Math.max(this.shake, 5);
-    this.audio.tone(1500, 0.28, "sawtooth", 0.035, 180);
+    this.audio.laser();
   }
 
   updateBoss(enemy, dt) {
@@ -2230,7 +2251,7 @@ class Game {
       damage,
       life: 5,
       owner: enemy,
-      color: enemy.type === "boss" ? "#ff7186" : "#ffd166"
+      color: enemy.type === "boss" ? "#ff7186" : (this.look === "67" && enemy.type === "shooter" ? "#EFE950" : "#ffd166")
     });
   }
 
@@ -3292,6 +3313,26 @@ class Game {
     context.restore();
   }
 
+  drawEnemyImage67(context, enemy, img, sizeMul = 1.15, rotation = 0) {
+    if (!img || !img.complete || !img.naturalWidth) return false;
+    const base = enemy.radius * 2 * sizeMul;
+    const ratio = img.naturalWidth / img.naturalHeight;
+    const w = ratio >= 1 ? base : base * ratio;
+    const h = ratio >= 1 ? base / ratio : base;
+    if (rotation) context.rotate(rotation);
+    context.fillStyle = "#ffffff";
+    context.fillRect(-w / 2, -h / 2, w, h);
+    context.drawImage(img, -w / 2, -h / 2, w, h);
+    if (enemy.flash > 0) {
+      context.save();
+      context.globalAlpha = 0.72;
+      context.fillStyle = "#ffffff";
+      context.fillRect(-w / 2, -h / 2, w, h);
+      context.restore();
+    }
+    return true;
+  }
+
   drawEnemy(context, enemy) {
     if (enemy.dead) return;
     if (enemy.elite) {
@@ -3397,42 +3438,51 @@ class Game {
       }
     } else if (enemy.type === "shooter") {
       const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
-      context.rotate(angle);
-      polygon(context, 6, enemy.radius, Math.PI / 6);
-      context.fill();
-      context.fillStyle = "#392f1c";
-      polygon(context, 6, enemy.radius * 0.58, Math.PI / 6);
-      context.fill();
-      context.strokeStyle = color;
-      context.lineWidth = enemy.attackTimer < 0.35 ? 5 : 3;
-      context.beginPath();
-      context.moveTo(4, 0);
-      context.lineTo(enemy.radius + 8, 0);
-      context.stroke();
+      if (this.look !== "67" || !this.drawEnemyImage67(context, enemy, ENEMY67_IMG.shooter, 1.4, angle - Math.PI / 12)) {
+        context.rotate(angle);
+        polygon(context, 6, enemy.radius, Math.PI / 6);
+        context.fill();
+        context.fillStyle = "#392f1c";
+        polygon(context, 6, enemy.radius * 0.58, Math.PI / 6);
+        context.fill();
+        context.strokeStyle = color;
+        context.lineWidth = enemy.attackTimer < 0.35 ? 5 : 3;
+        context.beginPath();
+        context.moveTo(4, 0);
+        context.lineTo(enemy.radius + 8, 0);
+        context.stroke();
+      }
     } else if (enemy.type === "dasher") {
       const angle = enemy.state === "hunt" ? Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x) : enemy.aim;
-      context.rotate(angle);
-      context.beginPath();
-      context.moveTo(enemy.radius + 3, 0);
-      context.lineTo(-enemy.radius, -enemy.radius * 0.78);
-      context.lineTo(-enemy.radius * 0.5, 0);
-      context.lineTo(-enemy.radius, enemy.radius * 0.78);
-      context.closePath();
-      context.fill();
-      context.fillStyle = "#3a2410";
-      context.fillRect(-5, -3, 10, 6);
+      const dasherImg = enemy.state === "hunt" ? ENEMY67_IMG.dasherIdle : ENEMY67_IMG.dasherDash;
+      if (this.look !== "67" || !this.drawEnemyImage67(context, enemy, dasherImg, 1.15, angle + Math.PI / 2)) {
+        context.rotate(angle);
+        context.beginPath();
+        context.moveTo(enemy.radius + 3, 0);
+        context.lineTo(-enemy.radius, -enemy.radius * 0.78);
+        context.lineTo(-enemy.radius * 0.5, 0);
+        context.lineTo(-enemy.radius, enemy.radius * 0.78);
+        context.closePath();
+        context.fill();
+        context.fillStyle = "#3a2410";
+        context.fillRect(-5, -3, 10, 6);
+      }
     } else if (enemy.type === "splitter") {
-      context.rotate(this.backgroundTime * 0.35);
-      polygon(context, 6, enemy.radius);
-      context.fill();
-      context.rotate(-this.backgroundTime * 1.2);
-      polygon(context, 4, enemy.radius * 0.52, Math.PI / 4);
-      context.fillStyle = "#172b49";
-      context.fill();
+      if (this.look !== "67" || !this.drawEnemyImage67(context, enemy, ENEMY67_IMG.splitter, 1.15)) {
+        context.rotate(this.backgroundTime * 0.35);
+        polygon(context, 6, enemy.radius);
+        context.fill();
+        context.rotate(-this.backgroundTime * 1.2);
+        polygon(context, 4, enemy.radius * 0.52, Math.PI / 4);
+        context.fillStyle = "#172b49";
+        context.fill();
+      }
     } else if (enemy.type === "mite") {
-      context.rotate(this.backgroundTime * 2 + enemy.id);
-      polygon(context, 4, enemy.radius, Math.PI / 4);
-      context.fill();
+      if (this.look !== "67" || !this.drawEnemyImage67(context, enemy, ENEMY67_IMG.mite, 1.15)) {
+        context.rotate(this.backgroundTime * 2 + enemy.id);
+        polygon(context, 4, enemy.radius, Math.PI / 4);
+        context.fill();
+      }
     } else if (enemy.type === "boss") {
       if (enemy.charge > 0) {
         const ratio = 1 - enemy.charge / 0.68;
@@ -3470,7 +3520,8 @@ class Game {
       const width = enemy.radius * 2;
       context.fillStyle = "rgba(5, 9, 16, 0.65)";
       context.fillRect(enemy.x - width / 2, enemy.y - enemy.radius - 10, width, 3);
-      context.fillStyle = (this.look === "67" && enemy.type === "chaser") ? "#ffd166" : enemy.color;
+      const hpBar67 = { chaser: "#ffd166", dasher: "#ffffff", shooter: "#ff6178", splitter: "#ffd166" };
+      context.fillStyle = (this.look === "67" && hpBar67[enemy.type]) || enemy.color;
       context.fillRect(enemy.x - width / 2, enemy.y - enemy.radius - 10, width * clamp(enemy.hp / enemy.maxHp, 0, 1), 3);
     }
   }
