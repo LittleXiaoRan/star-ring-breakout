@@ -3,11 +3,16 @@
 const STORM_BELT_SPEED = 65;
 const TOUCH_AIM_MAX_TURN_TIME = 0.2;
 const LOOK67_IMG = new Image();
-LOOK67_IMG.src = "assets/67bullet.png";
+LOOK67_IMG.src = "assets/images/67bullet.png";
 const LOOK67_PLAYER_IMG = new Image();
-LOOK67_PLAYER_IMG.src = "assets/67player.png";
+LOOK67_PLAYER_IMG.src = "assets/images/67player.png";
 const LOOK67_PLAYER_SIZE = 46;
 const LOOK67_BULLET_SIZE = 15;
+const DUDU_IMGS = ["1.png", "2.png", "3.png"].map((name) => {
+  const img = new Image();
+  img.src = `assets/images/小怪嘟嘟/${name}`;
+  return img;
+});
 // 67-shooter 里子弹相对人物图的位置（#bullet: left 34.7% / top 44.6% / width 32.2%），换算成以人物中心为原点的嘴部偏移
 const LOOK67_MUZZLE_X = 0.37;
 const LOOK67_MUZZLE_Y = 4.82;
@@ -129,6 +134,7 @@ const ENEMY_STATS = {
   dasher: { radius: 14, hp: 58, speed: 62, damage: 16, xp: 2, score: 210, color: "#ff9f43" },
   splitter: { radius: 20, hp: 90, speed: 43, damage: 18, xp: 3, score: 280, color: "#65a9ff" },
   mite: { radius: 8, hp: 16, speed: 116, damage: 8, xp: 1, score: 50, color: "#89c7ff" },
+  prism: { radius: 15, hp: 1, speed: 36, damage: 0, xp: 0, score: 0, color: "#e8f0f4" },
   boss: { radius: 46, hp: 1300, speed: 45, damage: 22, xp: 0, score: 5000, color: "#ff6178" }
 };
 
@@ -627,6 +633,9 @@ class Game {
     ui.helpButton.addEventListener("click", () => this.openHelp());
     ui.helpCloseButton.addEventListener("click", () => this.closeHelp());
     ui.helpBackButton.addEventListener("click", () => this.closeHelp());
+    ui.help.addEventListener("click", (event) => {
+      if (event.target === ui.help) this.closeHelpToBattle();
+    });
   }
 
   updateSoundControl() {
@@ -690,6 +699,12 @@ class Game {
   closeHelp() {
     ui.help.hidden = true;
     ui.settings.hidden = false;
+  }
+
+  closeHelpToBattle() {
+    ui.help.hidden = true;
+    ui.settings.hidden = true;
+    if (this.state === "paused") ui.pause.hidden = false;
   }
 
   resize() {
@@ -1606,6 +1621,7 @@ class Game {
     this.eliteRemaining = 1;
     this.spawnRemaining = counts[number];
     this.spawnTimer = 0.75;
+    this.prismTimer = random(8, 20);
     this.intermission = 0;
     if (number === 5) {
       this.enterBossArena();
@@ -1839,6 +1855,13 @@ class Game {
       if (this.intermission <= 0) this.beginWave(this.wave + 1);
       return;
     }
+    if (this.wave >= 1 && this.wave <= 4) {
+      this.prismTimer -= dt;
+      if (this.prismTimer <= 0) {
+        this.prismTimer = random(12, 24);
+        if (this.enemies.length < 17 && !this.enemies.some((enemy) => enemy.type === "prism")) this.spawnEnemy("prism");
+      }
+    }
     if (this.spawnRemaining <= 0) return;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && this.enemies.length < 17) {
@@ -1879,7 +1902,7 @@ class Game {
         if (farEnough && clear) break;
       }
     }
-    const scale = type === "boss" || type === "mite" ? 1 : 1 + (this.wave - 1) * 0.13;
+    const scale = type === "boss" || type === "mite" || type === "prism" ? 1 : 1 + (this.wave - 1) * 0.13;
     const enemy = {
       id: this.nextId++,
       type,
@@ -1904,6 +1927,14 @@ class Game {
       xp: stats.xp,
       score: stats.score,
       color: stats.color,
+      duduImg: type === "chaser" ? Math.floor(Math.random() * 3) : 0,
+      wanderTimer: 0,
+      wanderX: x,
+      wanderY: y,
+      life: type === "prism" ? random(25, 45) : 0,
+      laserCooldown: 0,
+      laserAngle: 0,
+      beamTime: 0,
       spawnIn: type === "boss" ? 1.5 : 0.65,
       flash: 0,
       dead: false,
@@ -1948,6 +1979,7 @@ class Game {
         continue;
       }
       if (enemy.type === "boss") this.updateBoss(enemy, dt);
+      else if (enemy.type === "prism") this.updatePrism(enemy, dt, slowFactor);
       else {
         const dx = player.x - enemy.x;
         const dy = player.y - enemy.y;
@@ -2019,7 +2051,16 @@ class Game {
       this.checkPortals(enemy);
       const touching = segmentHitsCircle(player.prevX, player.prevY, player.x, player.y, enemy.x, enemy.y, player.radius + enemy.radius);
       if (touching && !enemy.dead) {
-        if (player.dashedThisFrame || player.dashTime > 0) {
+        if (enemy.type === "prism") {
+          if ((player.dashedThisFrame || player.dashTime > 0) && enemy.dashHitId !== player.dashId) {
+            enemy.dashHitId = player.dashId;
+            this.triggerPrismLaser(enemy, Math.atan2(player.y - enemy.y, player.x - enemy.x));
+            const length = Math.max(1, Math.hypot(player.vx, player.vy));
+            enemy.x += player.vx / length * 24;
+            enemy.y += player.vy / length * 24;
+            this.shake = Math.max(this.shake, 6);
+          }
+        } else if (player.dashedThisFrame || player.dashTime > 0) {
           if (enemy.dashHitId !== player.dashId) {
             enemy.dashHitId = player.dashId;
             this.damageEnemy(enemy, player.dashDamage * (player.buffs.shield > 0 ? 1.5 : 1));
@@ -2045,7 +2086,7 @@ class Game {
           const drone = { x: player.x + Math.cos(angle) * 48, y: player.y + Math.sin(angle) * 48 };
           if (enemy.droneHit <= 0 && distanceSquared(drone, enemy) < (enemy.radius + 9) ** 2) {
             enemy.droneHit = 0.34;
-            this.damageEnemy(enemy, player.damage * 0.7);
+            this.damageEnemy(enemy, player.damage * 0.7, "player");
             this.burst(drone.x, drone.y, "#ad8cff", 3, 85, 2);
           }
         }
@@ -2075,6 +2116,51 @@ class Game {
       this.resolveObstacles(enemy, enemy.radius);
       this.avoidEnemyPortals(enemy);
     }
+  }
+
+  updatePrism(enemy, dt, slowFactor) {
+    enemy.life -= dt;
+    enemy.laserCooldown = Math.max(0, enemy.laserCooldown - dt);
+    enemy.beamTime = Math.max(0, enemy.beamTime - dt);
+    if (enemy.life <= 0) {
+      enemy.dead = true;
+      this.spawnRing(enemy.x, enemy.y, enemy.radius, enemy.radius + 30, enemy.color, 0.4);
+      return;
+    }
+    enemy.wanderTimer -= dt;
+    if (enemy.wanderTimer <= 0 || (enemy.wanderX - enemy.x) ** 2 + (enemy.wanderY - enemy.y) ** 2 < 60 ** 2) {
+      enemy.wanderTimer = random(1.6, 3.4);
+      enemy.wanderX = clamp(enemy.x + random(-420, 420), enemy.radius + 30, this.world.width - enemy.radius - 30);
+      enemy.wanderY = clamp(enemy.y + random(-420, 420), enemy.radius + 30, this.world.height - enemy.radius - 30);
+    }
+    const dx = enemy.wanderX - enemy.x;
+    const dy = enemy.wanderY - enemy.y;
+    const distance = Math.max(0.001, Math.hypot(dx, dy));
+    const steer = this.steerAroundObstacles(enemy, dx / distance, dy / distance, dt);
+    enemy.x += steer.nx * enemy.speed * dt * slowFactor;
+    enemy.y += steer.ny * enemy.speed * dt * slowFactor;
+  }
+
+  triggerPrismLaser(enemy, angle) {
+    if (enemy.dead || enemy.spawnIn > 0) return;
+    if (enemy.laserCooldown > 0) return;
+    enemy.laserCooldown = 1.2;
+    enemy.laserAngle = angle;
+    this.firePrismLaser(enemy);
+  }
+
+  firePrismLaser(enemy) {
+    enemy.beamTime = 0.4;
+    const length = 3200;
+    const endX = enemy.x + Math.cos(enemy.laserAngle) * length;
+    const endY = enemy.y + Math.sin(enemy.laserAngle) * length;
+    for (const other of this.enemies) {
+      if (other.dead || other === enemy || other.type === "prism" || other.spawnIn > 0) continue;
+      if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, other.x, other.y, other.radius + 5)) this.damageEnemy(other, 60);
+    }
+    if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) this.hurtPlayer(18);
+    this.shake = Math.max(this.shake, 5);
+    this.audio.tone(1500, 0.28, "sawtooth", 0.035, 180);
   }
 
   updateBoss(enemy, dt) {
@@ -2143,6 +2229,7 @@ class Game {
       radius,
       damage,
       life: 5,
+      owner: enemy,
       color: enemy.type === "boss" ? "#ff7186" : "#ffd166"
     });
   }
@@ -2183,7 +2270,7 @@ class Game {
         if (enemy.dead || enemy.spawnIn > 0 || bullet.hitIds.has(enemy.id)) continue;
         if (segmentHitsCircle(oldX, oldY, bullet.x, bullet.y, enemy.x, enemy.y, enemy.radius + bullet.radius)) {
           bullet.hitIds.add(enemy.id);
-          this.damageEnemy(enemy, bullet.damage);
+          this.damageEnemy(enemy, bullet.damage, "player");
           this.burst(bullet.x, bullet.y, bullet.critical ? "#ffd166" : "#b9ffee", bullet.critical ? 6 : 3, 100, 2);
           if (bullet.pierce > 0) bullet.pierce -= 1;
           else {
@@ -2215,6 +2302,20 @@ class Game {
         this.enemyBullets.splice(i, 1);
         continue;
       }
+      let absorbed = false;
+      if (bullet.owner && bullet.owner.type === "shooter" && !bullet.owner.dead) {
+        for (const enemy of this.enemies) {
+          if (enemy.dead || enemy.type !== "prism" || enemy.spawnIn > 0) continue;
+          if (distanceSquared(bullet, enemy) < (bullet.radius + enemy.radius) ** 2) {
+            this.triggerPrismLaser(enemy, Math.atan2(bullet.owner.y - enemy.y, bullet.owner.x - enemy.x));
+            this.burst(bullet.x, bullet.y, "#e8f0f4", 3, 70, 2);
+            this.enemyBullets.splice(i, 1);
+            absorbed = true;
+            break;
+          }
+        }
+      }
+      if (absorbed) continue;
       if (distanceSquared(bullet, player) < (bullet.radius + player.radius) ** 2) {
         if (player.dashTime > 0 || player.buffs.shield > 0) {
           this.enemyBullets.splice(i, 1);
@@ -2227,8 +2328,12 @@ class Game {
     }
   }
 
-  damageEnemy(enemy, damage) {
+  damageEnemy(enemy, damage, source = "env") {
     if (enemy.dead) return;
+    if (enemy.type === "prism") {
+      if (source === "player") this.triggerPrismLaser(enemy, Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x));
+      return;
+    }
     enemy.hp -= damage;
     enemy.flash = 0.08;
     if (this.runTime - this.lastHitSound > 0.045) {
@@ -2504,7 +2609,13 @@ class Game {
   }
 
   checkWave() {
-    if (this.spawnRemaining > 0 || this.intermission > 0 || this.enemies.length > 0 || this.pendingVictory) return;
+    const blockers = this.enemies.filter((enemy) => enemy.type !== "prism");
+    if (this.spawnRemaining > 0 || this.intermission > 0 || blockers.length > 0 || this.pendingVictory) return;
+    for (const prism of this.enemies) {
+      if (prism.type !== "prism") continue;
+      prism.dead = true;
+      this.spawnRing(prism.x, prism.y, prism.radius, prism.radius + 30, prism.color, 0.4);
+    }
     if (this.wave >= 5) {
       this.pendingVictory = true;
       this.endTimer = 1.7;
@@ -3076,7 +3187,7 @@ class Game {
   drawPlayer(context) {
     const player = this.player;
     if (player.drones > 0) {
-      context.strokeStyle = "rgba(173, 140, 255, 0.12)";
+      context.strokeStyle = "rgba(100, 251, 210, 0.12)";
       context.lineWidth = 1;
       context.beginPath();
       context.arc(player.x, player.y, 48, 0, Math.PI * 2);
@@ -3089,30 +3200,47 @@ class Game {
         context.translate(x, y);
         context.rotate(-angle * 1.7);
         polygon(context, 4, 8, Math.PI / 4);
-        context.fillStyle = "#ad8cff";
+        context.fillStyle = "#64fbd2";
         context.fill();
         context.restore();
       }
     }
     context.save();
     context.translate(player.x, player.y);
+    const look67 = this.look === "67";
     BUFF_IDS.forEach((id, index) => {
       const remaining = player.buffs[id];
       if (remaining <= 0) return;
-      const start = index * Math.PI * 2 / BUFF_IDS.length - Math.PI / 2;
       context.strokeStyle = BUFF_DEFS[id].color;
       context.lineWidth = 2;
-      context.beginPath();
-      context.arc(0, 0, 28, start, start + Math.PI * 2 / BUFF_IDS.length * remaining / BUFF_DEFS[id].duration);
-      context.stroke();
+      if (look67) {
+        const half = 32;
+        const perimeter = 8 * half;
+        const segLen = perimeter / BUFF_IDS.length * remaining / BUFF_DEFS[id].duration;
+        context.setLineDash([segLen, perimeter - segLen]);
+        context.lineDashOffset = -index * perimeter / BUFF_IDS.length - half;
+        context.strokeRect(-half, -half, half * 2, half * 2);
+        context.setLineDash([]);
+        context.lineDashOffset = 0;
+      } else {
+        const start = index * Math.PI * 2 / BUFF_IDS.length - Math.PI / 2;
+        context.beginPath();
+        context.arc(0, 0, 28, start, start + Math.PI * 2 / BUFF_IDS.length * remaining / BUFF_DEFS[id].duration);
+        context.stroke();
+      }
     });
     if (player.buffs.shield > 0) {
       context.globalAlpha = 0.45 + Math.sin(this.backgroundTime * 10) * 0.15;
       context.strokeStyle = "#64fbd2";
       context.lineWidth = 2;
-      context.beginPath();
-      context.arc(0, 0, 23, 0, Math.PI * 2);
-      context.stroke();
+      if (look67) {
+        const half = 27;
+        context.strokeRect(-half, -half, half * 2, half * 2);
+      } else {
+        context.beginPath();
+        context.arc(0, 0, 23, 0, Math.PI * 2);
+        context.stroke();
+      }
       context.globalAlpha = 1;
     }
     if (player.invulnerable > 0 && Math.floor(player.invulnerable * 20) % 2 === 0) context.globalAlpha = 0.38;
@@ -3120,9 +3248,14 @@ class Game {
       context.strokeStyle = "rgba(101, 169, 255, 0.75)";
       context.lineWidth = 1.5;
       context.setLineDash([5, 5]);
-      context.beginPath();
-      context.arc(0, 0, 22, this.backgroundTime, this.backgroundTime + Math.PI * 2);
-      context.stroke();
+      if (look67) {
+        const half = 26;
+        context.strokeRect(-half, -half, half * 2, half * 2);
+      } else {
+        context.beginPath();
+        context.arc(0, 0, 22, this.backgroundTime, this.backgroundTime + Math.PI * 2);
+        context.stroke();
+      }
       context.setLineDash([]);
     }
     if (this.look !== "67" || !(LOOK67_PLAYER_IMG.complete && LOOK67_PLAYER_IMG.naturalWidth > 0)) {
@@ -3196,17 +3329,72 @@ class Game {
     context.save();
     context.translate(enemy.x, enemy.y);
     if (enemy.spawnIn > 0) context.globalAlpha = 0.3;
+    if (enemy.type === "prism" && enemy.life < 3 && Math.floor(this.backgroundTime * 8) % 2 === 0) context.globalAlpha = 0.25;
     const color = enemy.flash > 0 ? "#ffffff" : enemy.color;
     context.fillStyle = color;
     context.strokeStyle = color;
     context.lineWidth = 1.5;
-    if (enemy.type === "chaser") {
-      context.rotate(this.backgroundTime * 0.8 + enemy.id);
-      polygon(context, 4, enemy.radius, Math.PI / 4);
+    if (enemy.type === "prism") {
+      if (enemy.beamTime > 0) {
+        context.save();
+        context.rotate(enemy.laserAngle);
+        context.strokeStyle = "rgba(226, 255, 255, 0.95)";
+        context.lineWidth = 5;
+        context.shadowColor = "#bffcff";
+        context.shadowBlur = 16;
+        context.beginPath();
+        context.moveTo(0, 0);
+        context.lineTo(3200, 0);
+        context.stroke();
+        context.restore();
+      }
+      const star = (outer, inner, rotation) => {
+        context.beginPath();
+        for (let i = 0; i < 8; i += 1) {
+          const r = i % 2 === 0 ? outer : inner;
+          const a = rotation + i * Math.PI / 4;
+          if (i === 0) context.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+          else context.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        context.closePath();
+      };
+      const outerR = enemy.radius * 1.3;
+      const innerR = outerR * 0.42;
+      context.fillStyle = "#e6eef2";
+      context.strokeStyle = "#ffffff";
+      context.lineWidth = 1;
+      star(outerR, innerR, this.backgroundTime * 0.8 + enemy.id);
       context.fill();
-      polygon(context, 4, enemy.radius * 0.46, Math.PI / 4);
-      context.fillStyle = "#351a29";
+      context.stroke();
+      context.fillStyle = "rgba(255, 255, 255, 0.9)";
+      star(outerR, innerR, -this.backgroundTime * 0.8 - enemy.id);
       context.fill();
+    } else if (enemy.type === "chaser") {
+      const dudu = this.look === "67" ? DUDU_IMGS[enemy.duduImg] : null;
+      if (dudu && dudu.complete && dudu.naturalWidth > 0) {
+        context.rotate(Math.sin(this.backgroundTime * 2.2 + enemy.id) * (Math.PI / 12));
+        const side = enemy.radius * 2;
+        context.fillStyle = "#ffffff";
+        context.fillRect(-side / 2, -side / 2, side, side);
+        const scale = Math.min(side / dudu.naturalWidth, side / dudu.naturalHeight);
+        const w = dudu.naturalWidth * scale;
+        const h = dudu.naturalHeight * scale;
+        context.drawImage(dudu, -w / 2, -h / 2, w, h);
+        if (enemy.flash > 0) {
+          context.save();
+          context.globalAlpha = 0.72;
+          context.fillStyle = "#ffffff";
+          context.fillRect(-side / 2, -side / 2, side, side);
+          context.restore();
+        }
+      } else {
+        context.rotate(this.backgroundTime * 0.8 + enemy.id);
+        polygon(context, 4, enemy.radius, Math.PI / 4);
+        context.fill();
+        polygon(context, 4, enemy.radius * 0.46, Math.PI / 4);
+        context.fillStyle = "#351a29";
+        context.fill();
+      }
     } else if (enemy.type === "shooter") {
       const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
       context.rotate(angle);
@@ -3282,7 +3470,7 @@ class Game {
       const width = enemy.radius * 2;
       context.fillStyle = "rgba(5, 9, 16, 0.65)";
       context.fillRect(enemy.x - width / 2, enemy.y - enemy.radius - 10, width, 3);
-      context.fillStyle = enemy.color;
+      context.fillStyle = (this.look === "67" && enemy.type === "chaser") ? "#ffd166" : enemy.color;
       context.fillRect(enemy.x - width / 2, enemy.y - enemy.radius - 10, width * clamp(enemy.hp / enemy.maxHp, 0, 1), 3);
     }
   }
