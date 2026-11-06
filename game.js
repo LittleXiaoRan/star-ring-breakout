@@ -4,6 +4,24 @@ const STORM_BELT_SPEED = 65;
 const TOUCH_AIM_MAX_TURN_TIME = 0.2;
 const LOOK67_IMG = new Image();
 LOOK67_IMG.src = "assets/images/67bullet.png";
+const LOOK67_IMG_BLUE = (() => {
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+  const tint = () => {
+    canvas.width = LOOK67_IMG.naturalWidth;
+    canvas.height = LOOK67_IMG.naturalHeight;
+    context.drawImage(LOOK67_IMG, 0, 0);
+    context.globalCompositeOperation = "source-atop";
+    context.globalAlpha = 0.9;
+    context.fillStyle = "#65a9ff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.globalAlpha = 1;
+    context.globalCompositeOperation = "source-over";
+  };
+  if (LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0) tint();
+  else LOOK67_IMG.addEventListener("load", tint);
+  return canvas;
+})();
 const LOOK67_PLAYER_IMG = new Image();
 LOOK67_PLAYER_IMG.src = "assets/images/67player.png";
 const LOOK67_PLAYER_SIZE = 46;
@@ -100,6 +118,13 @@ const ui = {
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
+  bgUploadButton: byId("bg-upload-btn"),
+  bgClearButton: byId("bg-clear-btn"),
+  bgFileInput: byId("bg-file-input"),
+  bgmUploadButton: byId("bgm-upload-btn"),
+  bgmClearButton: byId("bgm-clear-btn"),
+  bgmFileInput: byId("bgm-file-input"),
+  bgmFileName: byId("bgm-file-name"),
   helpButton: byId("help-btn"),
   help: byId("help-overlay"),
   helpCloseButton: byId("help-close-btn"),
@@ -109,6 +134,97 @@ const ui = {
   mobileDashTime: byId("mobile-dash-time"),
   liveStatus: byId("live-status")
 };
+
+const openCustomStore = () =>
+  new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("no-indexeddb"));
+      return;
+    }
+    const request = indexedDB.open("star-ring-custom-files", 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("files")) request.result.createObjectStore("files");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+const customFileSave = (key, blob) =>
+  openCustomStore().then((db) =>
+    new Promise((resolve, reject) => {
+      const tx = db.transaction("files", "readwrite");
+      tx.objectStore("files").put(blob, key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    })
+  );
+
+const customFileLoad = (key) =>
+  openCustomStore().then((db) =>
+    new Promise((resolve, reject) => {
+      const request = db.transaction("files", "readonly").objectStore("files").get(key);
+      request.onsuccess = () => {
+        db.close();
+        resolve(request.result || null);
+      };
+      request.onerror = () => {
+        db.close();
+        reject(request.error);
+      };
+    })
+  );
+
+const customFileDelete = (key) =>
+  openCustomStore().then((db) =>
+    new Promise((resolve, reject) => {
+      const tx = db.transaction("files", "readwrite");
+      tx.objectStore("files").delete(key);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    })
+  );
+
+const compressBackgroundImage = (file) =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1920 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      try {
+        context.drawImage(img, 0, 0, canvas.width, canvas.height);
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        reject(error);
+        return;
+      }
+      canvas.toBlob((blob) => {
+        URL.revokeObjectURL(url);
+        if (blob) resolve(blob);
+        else reject(new Error("compress-failed"));
+      }, "image/jpeg", 0.85);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("bad-image"));
+    };
+    img.src = url;
+  });
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const rotateToward = (current, target, maxDelta) => {
@@ -626,6 +742,12 @@ class Game {
       x: Math.random(), y: Math.random(), size: random(0.5, 1.6), phase: random(0, Math.PI * 2)
     }));
     this.audio = new AudioEngine();
+    this.bgm = new Audio();
+    this.bgm.loop = true;
+    this.bgm.volume = 0.4;
+    this.customBgImage = null;
+    this.customBgImageUrl = null;
+    this.initCustomFiles();
     this.input = new Input(this);
     this.bindInterface();
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -703,6 +825,20 @@ class Game {
       this.audio.setMode(button.dataset.soundMode);
       this.updateSoundControl();
     });
+    ui.bgUploadButton.addEventListener("click", () => ui.bgFileInput.click());
+    ui.bgFileInput.addEventListener("change", () => {
+      const file = ui.bgFileInput.files[0];
+      ui.bgFileInput.value = "";
+      if (file) this.handleBackgroundFile(file);
+    });
+    ui.bgClearButton.addEventListener("click", () => this.clearCustomBackground());
+    ui.bgmUploadButton.addEventListener("click", () => ui.bgmFileInput.click());
+    ui.bgmFileInput.addEventListener("change", () => {
+      const file = ui.bgmFileInput.files[0];
+      ui.bgmFileInput.value = "";
+      if (file) this.handleMusicFile(file);
+    });
+    ui.bgmClearButton.addEventListener("click", () => this.clearCustomMusic());
     ui.settingsLookToggle.addEventListener("click", (event) => {
       const button = event.target.closest("[data-look]");
       if (!button) return;
@@ -739,6 +875,110 @@ class Game {
     ui.settingsSoundToggle.querySelectorAll("[data-sound-mode]").forEach((button) => {
       button.setAttribute("aria-checked", String(button.dataset.soundMode === this.audio.mode));
     });
+    this.bgm.muted = this.audio.mode === "none";
+  }
+
+  showCustomToast(message, color = "#64fbd2") {
+    ui.powerupToast.textContent = message;
+    ui.powerupToast.style.color = color;
+    ui.powerupToast.style.borderColor = color;
+    ui.powerupToast.hidden = false;
+    this.powerupToastTime = 2;
+  }
+
+  initCustomFiles() {
+    this.restoreCustomBackground();
+    this.restoreCustomMusic();
+    const unlock = () => {
+      this.tryPlayBgm();
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("keydown", unlock);
+  }
+
+  restoreCustomBackground() {
+    customFileLoad("background")
+      .then((blob) => {
+        if (blob) this.applyCustomBackground(blob);
+      })
+      .catch(() => {});
+  }
+
+  applyCustomBackground(blob) {
+    if (this.customBgImageUrl) URL.revokeObjectURL(this.customBgImageUrl);
+    this.customBgImageUrl = URL.createObjectURL(blob);
+    this.customBgImage = new Image();
+    this.customBgImage.src = this.customBgImageUrl;
+    ui.bgClearButton.hidden = false;
+  }
+
+  clearCustomBackground() {
+    customFileDelete("background").catch(() => {});
+    if (this.customBgImageUrl) URL.revokeObjectURL(this.customBgImageUrl);
+    this.customBgImageUrl = null;
+    this.customBgImage = null;
+    ui.bgClearButton.hidden = true;
+  }
+
+  handleBackgroundFile(file) {
+    compressBackgroundImage(file)
+      .then((blob) => customFileSave("background", blob).then(() => this.applyCustomBackground(blob)))
+      .then(() => this.showCustomToast(I18N.t("custom.bgSaved")))
+      .catch(() => this.showCustomToast(I18N.t("custom.bgError"), "#ff9dab"));
+  }
+
+  restoreCustomMusic() {
+    customFileLoad("music")
+      .then((blob) => {
+        if (!blob) return;
+        this.bgm.src = URL.createObjectURL(blob);
+        this.bgm.muted = this.audio.mode === "none";
+        ui.bgmClearButton.hidden = false;
+        try {
+          ui.bgmFileName.textContent = localStorage.getItem("star-ring-bgm-name") || "";
+        } catch {}
+        this.tryPlayBgm();
+      })
+      .catch(() => {});
+  }
+
+  tryPlayBgm() {
+    if (!this.bgm.src) return;
+    this.bgm.play().catch(() => {});
+  }
+
+  handleMusicFile(file) {
+    if (file.size > 20 * 1024 * 1024) {
+      this.showCustomToast(I18N.t("custom.musicSizeError"), "#ff9dab");
+      return;
+    }
+    customFileSave("music", file)
+      .then(() => {
+        this.bgm.src = URL.createObjectURL(file);
+        this.bgm.muted = this.audio.mode === "none";
+        ui.bgmClearButton.hidden = false;
+        ui.bgmFileName.textContent = file.name;
+        try {
+          localStorage.setItem("star-ring-bgm-name", file.name);
+        } catch {}
+        this.bgm.play().catch(() => {});
+        this.showCustomToast(I18N.t("custom.bgmSaved"));
+      })
+      .catch(() => this.showCustomToast(I18N.t("custom.bgmError"), "#ff9dab"));
+  }
+
+  clearCustomMusic() {
+    this.bgm.pause();
+    this.bgm.removeAttribute("src");
+    this.bgm.load();
+    ui.bgmClearButton.hidden = true;
+    ui.bgmFileName.textContent = "";
+    try {
+      localStorage.removeItem("star-ring-bgm-name");
+    } catch {}
+    customFileDelete("music").catch(() => {});
   }
 
   updateLookControl() {
@@ -793,6 +1033,57 @@ class Game {
   openHelp() {
     ui.settings.hidden = true;
     ui.help.hidden = false;
+    this.renderEnemyGuide();
+  }
+
+  renderEnemyGuide() {
+    const canvases = ui.help.querySelectorAll(".dex-canvas");
+    if (!canvases.length) return;
+    const savedLook = this.look;
+    const savedPlayer = this.player;
+    const savedTime = this.backgroundTime;
+    const sizes = { chaser: 20, shooter: 20, dasher: 22, splitter: 20, mite: 16, prism: 21, boss: 19 };
+    this.look = "classic";
+    this.backgroundTime = 0.7;
+    for (const canvas of canvases) {
+      const type = canvas.dataset.enemy;
+      const stats = ENEMY_STATS[type];
+      if (!stats) continue;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const size = canvas.clientWidth || 76;
+      canvas.width = Math.round(size * dpr);
+      canvas.height = Math.round(size * dpr);
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size, size);
+      this.player = { x: size / 2 + 60, y: size / 2 };
+      this.drawEnemy(ctx, {
+        type,
+        dead: false,
+        elite: false,
+        x: size / 2,
+        y: size / 2,
+        radius: sizes[type],
+        color: stats.color,
+        spawnIn: 0,
+        flash: 0,
+        state: "hunt",
+        aim: 0,
+        faceAngle: 0,
+        attackTimer: 1,
+        charge: 0,
+        beamTime: 0,
+        laserAngle: 0,
+        life: 100,
+        id: 0,
+        duduImg: 0,
+        hp: 1,
+        maxHp: 1
+      });
+    }
+    this.look = savedLook;
+    this.player = savedPlayer;
+    this.backgroundTime = savedTime;
   }
 
   closeHelp() {
@@ -1571,7 +1862,8 @@ class Game {
   }
 
   endlessSpeedBonus() {
-    return { 15: 4, 20: 6, 25: 8 }[this.endless.scale];
+    const base = { 15: 4, 20: 6, 25: 8 }[this.endless.scale];
+    return Math.min(15, base + Math.max(0, this.endlessRound - 1) * 0.5);
   }
 
   pickEndlessMap() {
@@ -2588,6 +2880,18 @@ class Game {
       this.showAnnouncement("announce.bossDown", "announce.bossDownSub");
       this.audio.explode(0.55);
       this.audio.tone(330, 0.5, "sine", 0.035, 880);
+      for (let i = 0; i < 50; i += 1) {
+        this.pickups.push({
+          type: "xp",
+          x: enemy.x,
+          y: enemy.y,
+          vx: random(-90, 90),
+          vy: random(-90, 90),
+          value: 1,
+          life: 16,
+          phase: random(0, Math.PI * 2)
+        });
+      }
       return;
     }
     if (enemy.elite) this.spawnPowerup(enemy.x, enemy.y, null, 18);
@@ -2603,7 +2907,8 @@ class Game {
         phase: random(0, Math.PI * 2)
       });
     }
-    if (Math.random() < 0.075 && this.player.hp < this.player.maxHp) {
+    const progress = this.mode === "endless" ? this.endlessRound : this.wave;
+    if (Math.random() < Math.max(0.015, 0.075 * Math.pow(0.82, progress - 1)) && this.player.hp < this.player.maxHp) {
       this.pickups.push({ type: "health", x: enemy.x, y: enemy.y, vx: random(-35, 35), vy: random(-35, 35), value: 16, life: 12, phase: 0 });
     }
     if (enemy.type === "splitter") {
@@ -2773,7 +3078,7 @@ class Game {
     return [
       { id: "damage", icon: "↑", nameKey: "upg.damage.name", descKey: "upg.damage.desc", max: 8, apply: () => { player.damage *= 1.25; } },
       { id: "rapid", icon: "»", nameKey: "upg.rapid.name", descKey: "upg.rapid.desc", max: 8, apply: () => { player.fireRate *= 1.18; } },
-      { id: "multi", icon: "⋔", nameKey: "upg.multi.name", descKey: "upg.multi.desc", max: 3, apply: () => { player.multishot += 1; } },
+      { id: "multi", icon: "⋔", nameKey: "upg.multi.name", descKey: "upg.multi.desc", max: 5, apply: () => { player.multishot += 1; } },
       { id: "pierce", icon: "⇥", nameKey: "upg.pierce.name", descKey: "upg.pierce.desc", max: 3, apply: () => { player.pierce += 1; } },
       { id: "bounce", icon: "⌁", nameKey: "upg.bounce.name", descKey: "upg.bounce.desc", max: 2, apply: () => { player.bounces += 1; } },
       { id: "speed", icon: "›", nameKey: "upg.speed.name", descKey: "upg.speed.desc", max: 5, apply: () => { player.speed *= 1.12; } },
@@ -3049,6 +3354,7 @@ class Game {
     context.scale(this.zoom, this.zoom);
     if (this.shake > 0) context.translate(random(-this.shake, this.shake), random(-this.shake, this.shake));
     context.translate(-this.camera.x, -this.camera.y);
+    this.drawCustomBackground(context);
     this.drawWorldBounds(context);
     this.drawMapFeatures(context);
     this.drawObstacles(context);
@@ -3374,6 +3680,25 @@ class Game {
       }
     }
     context.restore();
+  }
+
+  drawCustomBackground(context) {
+    const img = this.customBgImage;
+    if (this.state === "menu" || !img || !img.complete || !img.naturalWidth) return;
+    const imgRatio = img.naturalWidth / img.naturalHeight;
+    const worldRatio = this.world.width / this.world.height;
+    let sw;
+    let sh;
+    if (imgRatio > worldRatio) {
+      sh = img.naturalHeight;
+      sw = sh * worldRatio;
+    } else {
+      sw = img.naturalWidth;
+      sh = sw / worldRatio;
+    }
+    context.drawImage(img, (img.naturalWidth - sw) / 2, (img.naturalHeight - sh) / 2, sw, sh, 0, 0, this.world.width, this.world.height);
+    context.fillStyle = "rgba(5, 9, 16, 0.52)";
+    context.fillRect(0, 0, this.world.width, this.world.height);
   }
 
   drawWorldBounds(context) {
@@ -3750,18 +4075,19 @@ class Game {
     if (this.look === "67" && LOOK67_IMG.complete && LOOK67_IMG.naturalWidth > 0) {
       const size = LOOK67_BULLET_SIZE;
       for (const bullet of this.bullets) {
-        context.drawImage(LOOK67_IMG, bullet.x - size / 2, bullet.y - size / 2, size, size);
+        const image = bullet.critical ? LOOK67_IMG_BLUE : LOOK67_IMG;
+        context.drawImage(image, bullet.x - size / 2, bullet.y - size / 2, size, size);
       }
       return;
     }
     for (const bullet of this.bullets) {
-      context.strokeStyle = bullet.critical ? "rgba(255, 209, 102, 0.65)" : "rgba(100, 251, 210, 0.5)";
+      context.strokeStyle = bullet.critical ? "rgba(101, 169, 255, 0.65)" : "rgba(100, 251, 210, 0.5)";
       context.lineWidth = bullet.radius * 1.2;
       context.beginPath();
       context.moveTo(bullet.x - bullet.vx * 0.025, bullet.y - bullet.vy * 0.025);
       context.lineTo(bullet.x, bullet.y);
       context.stroke();
-      context.fillStyle = bullet.critical ? "#ffd166" : "#dffff7";
+      context.fillStyle = bullet.critical ? "#65a9ff" : "#dffff7";
       context.beginPath();
       context.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
       context.fill();

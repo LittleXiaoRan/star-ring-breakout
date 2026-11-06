@@ -222,6 +222,23 @@
             <div><strong data-en="Language">语言</strong><small data-en="Interface language">界面显示语言</small></div>
             <button id="settings-lang-toggle" class="lang-btn" type="button" aria-label="切换语言" data-en-aria="Toggle language"><span id="settings-lang-label">English</span></button>
           </div>
+          <div class="setting-row stacked">
+            <div><strong data-en="Battle Background">战斗背景</strong><small data-en="Upload your own photo as the background during battle; menus stay unchanged">上传自己的照片作为战斗时的背景，菜单界面不变</small></div>
+            <div class="file-actions">
+              <button id="bg-upload-btn" class="file-btn" type="button" data-en="Upload Image">上传图片</button>
+              <button id="bg-clear-btn" class="file-btn subtle" type="button" data-en="Clear" hidden>清除</button>
+              <input id="bg-file-input" type="file" accept="image/*" hidden>
+            </div>
+          </div>
+          <div class="setting-row stacked">
+            <div><strong data-en="Background Music">背景音乐</strong><small data-en="Upload your own music to loop in the background">上传自己的音乐作为背景循环播放</small></div>
+            <div class="file-actions">
+              <button id="bgm-upload-btn" class="file-btn" type="button" data-en="Upload Music">上传音乐</button>
+              <button id="bgm-clear-btn" class="file-btn subtle" type="button" data-en="Clear" hidden>清除</button>
+              <span id="bgm-file-name" class="file-name"></span>
+              <input id="bgm-file-input" type="file" accept="audio/*" hidden>
+            </div>
+          </div>
           <button id="help-btn" class="settings-help-btn" type="button"><div><strong data-en="Controls &amp; Map Help">操作与地图帮助</strong><small data-en="View controls and map guides">查看操作方法与各地图指南</small></div><span class="row-arrow" aria-hidden="true">›</span></button>
           <button id="settings-close-btn" class="primary-btn" type="button" data-en="Done">完成</button>
         </section>
@@ -267,32 +284,94 @@
               </div>
             </details>
 
-            <details class="help-map">
-              <summary><span><strong data-en="Enemy Guide">敌人图鉴</strong><small data-en="How each enemy looks in Classic and 67 looks">各敌人在经典与 67 外观下的样子</small></span></summary>
+            <details class="help-map help-endless">
+              <summary><span><strong data-en="Endless Mode">无尽模式</strong><small data-en="Round rules and gear configuration">关卡规则与齿轮设置说明</small></span></summary>
+              <div class="help-body">
+                <section class="help-section">
+                  <h3 data-en="Entering Endless Mode">进入无尽模式</h3>
+                  <p data-en="On the sector select screen, use the mode buttons in the top-left corner to switch between Classic and Endless mode. The gear inside the Endless button opens its settings.">在选择星域界面，用左上角的模式按钮在经典模式与无尽模式之间切换；无尽模式按钮内的齿轮可以打开无尽设置。</p>
+                  <p data-en="The map you select is round 1; later rounds follow the map rule in the gear settings.">选中的地图作为第 1 关，之后的关卡按齿轮设置中的规则决定。</p>
+                </section>
+                <section class="help-section">
+                  <h3 data-en="Gear Settings">齿轮设置</h3>
+                  <p data-en="Map per round: a random sector every round, cycle through all sectors in order, or stay on the selected map.">每关地图：每关随机 / 按序轮换 / 全程使用选中地图。</p>
+                  <p data-en="Enemy scaling: enemy HP multiplies by Mild +15%, Standard +20%, or Brutal +25% each round. Enemy speed starts at Mild +4%, Standard +6%, or Brutal +8% and rises +0.5% each round, capped at +15%, compounding every round.">怪物增幅：每过一关，怪物血量按 温和 +15%、标准 +20% 或 凶悍 +25% 相乘累计；速度加成起始为 温和 +4%、标准 +6% 或 凶悍 +8%，每过一轮再 +0.5%，封顶 +15%，逐轮相乘累计。</p>
+                  <p data-en="Boss: the round-5 Warden appears every round, or only in round 1.">首领：第 5 波的星环监管者每关都出现，或仅第 1 关出现。</p>
+                </section>
+                <section class="help-section">
+                  <h3 data-en="Round Rules">关卡规则</h3>
+                  <p data-en="Clearing a round repairs 40 hull, never above the hull maximum. Upgrades, level, and score all carry over, and enemy debris left on the field stays too.">每通过一关，船体回复 40 点，但不会超过船体上限；强化、等级与分数全部保留，场上残留的敌人残骸也会保留。</p>
+                  <p data-en="On defeat, your farthest round is recorded. Every new run starts from round 1.">死亡后记录最远抵达的关数，重新开始永远从第 1 关打起。</p>
+                </section>
+              </div>
+            </details>
+
+            <details class="help-map help-dex">
+              <summary><span><strong data-en="Enemy Guide">敌人图鉴</strong><small data-en="Real appearance of each enemy in Classic and 67 looks">各敌人在经典与 67 外观下的真实样子</small></span></summary>
               <div class="help-body">
                 <p data-en="The look setting only changes visuals: Classic uses geometric shapes; the 67 look swaps the player, bullets, and most enemies (red minion, Shooter, Dasher, Splitter, Mite) for cartoon art, with matching HP bar colors. The Prism Beast and the boss keep their Classic shapes in both looks.">外观只改变画面风格：经典模式为几何图形；67 外观会把玩家、弹丸以及大部分敌人（红色小怪、射手、突袭者、分裂者、迷你怪）换成卡通造型，血条颜色也随之变化。棱镜兽与首领在两种外观下保持不变。</p>
-                <h3 data-en="Pursuer — the red minion">追击者 · 红色小怪</h3>
-                <p data-en="Classic look: a slowly spinning red square that closes in and rams you.">经典外观：缓慢自转的红色方块，追近后直接撞击。</p>
-                <p data-en="67 look: called “Dudu” — a cute yellow cartoon creature on a white square card that sways gently side to side. Each one randomly picks one of three poses.">67 外观：名为“嘟嘟”，白底方图上的黄色卡通小怪兽，左右轻轻摇摆；每只随机从三种形态中选一种。</p>
-                <h3 data-en="Shooter">射手</h3>
-                <p data-en="Classic look: a yellow hexagon with a gun barrel that fires aimed shots from a distance.">经典外观：黄色六边形带炮管，在远处朝你射击。</p>
-                <p data-en="67 look: a cartoon sprite that always rotates to face its aim; its bullets are yellow (#EFE950) and its HP bar is red.">67 外观：卡通造型图，始终朝着射击方向旋转；弹丸为 #EFE950 黄色，血条为红色。</p>
-                <h3 data-en="Dasher">突袭者</h3>
-                <p data-en="Classic look: an orange triangle that telegraphs its aim, then charges in a straight line.">经典外观：橙色三角，先瞄准预警，随后直线冲刺撞击。</p>
-                <p data-en="67 look: a cartoon sprite that switches to a different picture while telegraphing and dashing, always facing its target; its HP bar is white.">67 外观：卡通造型图，正常追踪与预备冲刺、冲刺时使用不同的图片，朝向始终对着目标方向；血条为白色。</p>
-                <h3 data-en="Splitter">分裂者</h3>
-                <p data-en="Classic look: a blue hexagon that splits into two fast mites when destroyed.">经典外观：蓝色六边形，被击毁后分裂出两只迷你怪。</p>
-                <p data-en="67 look: a large cartoon sprite with a yellow HP bar.">67 外观：卡通大图，血条为黄色。</p>
-                <h3 data-en="Mite">迷你怪</h3>
-                <p data-en="Classic look: a tiny, very fast blue square that swarms you in numbers.">经典外观：速度极快的蓝色小方块，常成群扑来。</p>
-                <p data-en="67 look: a small cartoon sprite matching the Splitter's style.">67 外观：卡通小图，与分裂者风格一致。</p>
-                <h3 data-en="Prism Beast">棱镜兽</h3>
-                <p data-en="Classic look: two same-sized silver four-pointed stars overlapping, rotating in opposite directions.">经典外观：两个相同大小的银色四角星重叠，反方向旋转。</p>
-                <p data-en="67 look: unchanged.">67 外观：与经典相同。</p>
-                <p data-en="It appears at random during waves 1–4, wanders slowly, and never attacks on its own. It takes no damage; if hit by your attack or a Shooter's bullet, it instantly fires a map-wide laser toward the attacker, hurting everyone on the line — you for 18, enemies for 60. It vanishes on its own after 25–45 seconds (blinking near the end) and never blocks wave completion.">它在第 1~4 波不定时随机出现，缓慢游走，不会主动攻击。它不受任何伤害；被你的攻击或射手的弹丸打中后，会瞬间朝攻击者当时的方向发射全图激光，路径上所有角色都会受伤——玩家 18 点、敌人 60 点。它会在 25~45 秒后自己消失（消失前会闪烁），且不算清波目标。</p>
-                <h3 data-en="Ring Warden — the final boss">星环监管者 · 最终首领</h3>
-                <p data-en="Classic look: a huge red ring. It telegraphs its next attack, then fires radial bullet bursts, aimed fans, or a ring of shots while summoning pursuers.">经典外观：巨大的红色圆环。攻击前会蓄力预警，随后释放环形弹幕、定向弹幕，或发射弹环并召唤追击者。</p>
-                <p data-en="67 look: unchanged.">67 外观：与经典相同。</p>
+                <div class="dex-entry">
+                  <h3 data-en="Pursuer — the red minion">追击者 · 红色小怪</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="chaser" aria-label="追击者经典外观" data-en-aria="Pursuer classic look"></canvas><figcaption data-en="Classic">经典外观</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/小怪嘟嘟/1.png" alt="嘟嘟" loading="lazy"><figcaption data-en="67 look">67 外观</figcaption></figure>
+                  </div>
+                  <p data-en="Classic look: a slowly spinning red square that closes in and rams you.">经典外观：缓慢自转的红色方块，追近后直接撞击。</p>
+                  <p data-en="67 look: called “Dudu” — a cute yellow cartoon creature on a white square card that sways gently side to side. Each one randomly picks one of three poses.">67 外观：名为“嘟嘟”，白底方图上的黄色卡通小怪兽，左右轻轻摇摆；每只随机从三种形态中选一种。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Shooter">射手</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="shooter" aria-label="射手经典外观" data-en-aria="Shooter classic look"></canvas><figcaption data-en="Classic">经典外观</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/射击者/射击者.png" alt="射手 67 外观" loading="lazy"><figcaption data-en="67 look">67 外观</figcaption></figure>
+                  </div>
+                  <p data-en="Classic look: a yellow hexagon with a gun barrel that fires aimed shots from a distance.">经典外观：黄色六边形带炮管，在远处朝你射击。</p>
+                  <p data-en="67 look: a cartoon sprite that always rotates to face its aim; its bullets are yellow (#EFE950) and its HP bar is red.">67 外观：卡通造型图，始终朝着射击方向旋转；弹丸为 #EFE950 黄色，血条为红色。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Dasher">突袭者</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="dasher" aria-label="突袭者经典外观" data-en-aria="Dasher classic look"></canvas><figcaption data-en="Classic">经典外观</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/冲刺者/冲刺突袭者正常.png" alt="突袭者 67 外观（正常）" loading="lazy"><figcaption data-en="67 look — normal">67 外观 · 正常</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/冲刺者/冲次突袭者冲刺.png" alt="突袭者 67 外观（冲刺）" loading="lazy"><figcaption data-en="67 look — dashing">67 外观 · 冲刺</figcaption></figure>
+                  </div>
+                  <p data-en="Classic look: an orange triangle that telegraphs its aim, then charges in a straight line.">经典外观：橙色三角，先瞄准预警，随后直线冲刺撞击。</p>
+                  <p data-en="67 look: a cartoon sprite that switches to a different picture while telegraphing and dashing, always facing its target; its HP bar is white.">67 外观：卡通造型图，正常追踪与预备冲刺、冲刺时使用不同的图片，朝向始终对着目标方向；血条为白色。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Splitter">分裂者</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="splitter" aria-label="分裂者经典外观" data-en-aria="Splitter classic look"></canvas><figcaption data-en="Classic">经典外观</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/分裂者/大.png" alt="分裂者 67 外观" loading="lazy"><figcaption data-en="67 look">67 外观</figcaption></figure>
+                  </div>
+                  <p data-en="Classic look: a blue hexagon that splits into two fast mites when destroyed.">经典外观：蓝色六边形，被击毁后分裂出两只迷你怪。</p>
+                  <p data-en="67 look: a large cartoon sprite with a yellow HP bar.">67 外观：卡通大图，血条为黄色。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Mite">迷你怪</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="mite" aria-label="迷你怪经典外观" data-en-aria="Mite classic look"></canvas><figcaption data-en="Classic">经典外观</figcaption></figure>
+                    <figure><img class="dex-img" src="assets/images/分裂者/小.png" alt="迷你怪 67 外观" loading="lazy"><figcaption data-en="67 look">67 外观</figcaption></figure>
+                  </div>
+                  <p data-en="Classic look: a tiny, very fast blue square that swarms you in numbers.">经典外观：速度极快的蓝色小方块，常成群扑来。</p>
+                  <p data-en="67 look: a small cartoon sprite matching the Splitter's style.">67 外观：卡通小图，与分裂者风格一致。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Prism Beast">棱镜兽</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="prism" aria-label="棱镜兽经典外观" data-en-aria="Prism Beast classic look"></canvas><figcaption data-en="Classic look">经典外观</figcaption></figure>
+                    <p class="dex-same" data-en="67 look: unchanged.">67 外观：与经典相同。</p>
+                  </div>
+                  <p data-en="Classic look: two same-sized silver four-pointed stars overlapping, rotating in opposite directions.">经典外观：两个相同大小的银色四角星重叠，反方向旋转。</p>
+                  <p data-en="It appears at random during waves 1–4, wanders slowly, and never attacks on its own. It takes no damage; if hit by your attack or a Shooter's bullet, it instantly fires a map-wide laser toward the attacker, hurting everyone on the line — you for 18, enemies for 60. It vanishes on its own after 25–45 seconds (blinking near the end) and never blocks wave completion.">它在第 1~4 波不定时随机出现，缓慢游走，不会主动攻击。它不受任何伤害；被你的攻击或射手的弹丸打中后，会瞬间朝攻击者当时的方向发射全图激光，路径上所有角色都会受伤——玩家 18 点、敌人 60 点。它会在 25~45 秒后自己消失（消失前会闪烁），且不算清波目标。</p>
+                </div>
+                <div class="dex-entry">
+                  <h3 data-en="Ring Warden — the final boss">星环监管者 · 最终首领</h3>
+                  <div class="dex-visuals">
+                    <figure><canvas class="dex-canvas" width="76" height="76" data-enemy="boss" aria-label="星环监管者经典外观" data-en-aria="Ring Warden classic look"></canvas><figcaption data-en="Classic look">经典外观</figcaption></figure>
+                    <p class="dex-same" data-en="67 look: unchanged.">67 外观：与经典相同。</p>
+                  </div>
+                  <p data-en="Classic look: a huge red ring. It telegraphs its next attack, then fires radial bullet bursts, aimed fans, or a ring of shots while summoning pursuers.">经典外观：巨大的红色圆环。攻击前会蓄力预警，随后释放环形弹幕、定向弹幕，或发射弹环并召唤追击者。</p>
               </div>
             </details>
 

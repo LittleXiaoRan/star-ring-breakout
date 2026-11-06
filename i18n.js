@@ -186,6 +186,13 @@ I18N.zh = {
     dash: { name: "相位增幅", desc: "冲刺冷却缩短 18%，撞击伤害增加 6，撞敌仍会受伤" },
     drone: { name: "环绕利刃", desc: "增加 1 枚环绕刃，持续切割附近敌人" },
     shield: { name: "再生护盾", desc: "获得可抵挡一次伤害的护盾，每 12 秒再生" }
+  },
+  custom: {
+    bgSaved: "背景已更新",
+    bgError: "图片无效或处理失败",
+    bgmSaved: "背景音乐已设置",
+    bgmError: "音乐保存失败",
+    musicSizeError: "音乐文件不能超过 20MB"
   }
 };
 
@@ -308,6 +315,13 @@ I18N.en = {
     dash: { name: "Phase Amplifier", desc: "Dash cooldown -18%, impact damage +6; ramming still hurts you" },
     drone: { name: "Orbital Blade", desc: "Gain 1 orbiting blade that cuts nearby enemies" },
     shield: { name: "Regenerative Shield", desc: "Gain a shield that blocks one hit and recharges every 12s" }
+  },
+  custom: {
+    bgSaved: "Background updated",
+    bgError: "Invalid image or processing failed",
+    bgmSaved: "Background music set",
+    bgmError: "Failed to save music",
+    musicSizeError: "Music file must be under 20MB"
   }
 };
 

@@ -296,8 +296,8 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .touch-controls { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-.settings-overlay { z-index: 14; }
-.settings-panel { width: min(100%, 430px); }
+.settings-overlay { z-index: 14; animation: none; }
+.settings-panel { width: min(100%, 430px); animation: pop-in 180ms ease-out; }
 .settings-panel .primary-btn { margin-top: 10px; }
 .setting-row, .settings-help-btn { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: rgba(110, 146, 166, 0.04); text-align: left; transition: border-color 150ms ease, background 150ms ease; }
 .setting-row { margin-bottom: 10px; }
@@ -326,8 +326,8 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .settings-help-btn { width: 100%; margin: 0 0 10px; color: inherit; cursor: pointer; }
 .row-arrow { flex-shrink: 0; color: var(--muted); font-size: 20px; line-height: 1; }
 
-.help-overlay { z-index: 15; align-items: flex-start; }
-.help-panel { display: flex; flex-direction: column; flex-shrink: 0; width: min(100%, 820px); max-height: calc(100dvh - 56px); margin: auto; padding: 28px; overflow: hidden; text-align: left; }
+.help-overlay { z-index: 15; align-items: flex-start; animation: none; }
+.help-panel { display: flex; flex-direction: column; flex-shrink: 0; width: min(100%, 820px); max-height: calc(100dvh - 56px); margin: auto; padding: 28px; overflow: hidden; text-align: left; animation: pop-in 180ms ease-out; }
 .help-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .help-header h2 { margin-top: 0; }
 .help-close-btn { width: 36px; height: 36px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; cursor: pointer; }
@@ -347,8 +347,18 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .help-general > summary strong { color: var(--mint); font-size: 17px; letter-spacing: 0.05em; }
 .help-general > summary::after { color: var(--mint); }
 .help-map-list { display: grid; gap: 8px; margin-top: 14px; }
+.help-content > details + details { margin-top: 14px; }
+.help-endless { border-color: rgba(173, 140, 255, 0.32) !important; }
+.help-endless > summary strong, .help-endless > summary::after { color: #ad8cff; }
 .help-map > summary { min-height: 62px; padding: 13px 16px; }
 .help-map[open] { border-color: rgba(100, 251, 210, 0.35); }
+.dex-entry + .dex-entry { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.dex-visuals { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; margin: 10px 0 4px; }
+.dex-visuals figure { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0; }
+.dex-visuals figcaption { color: var(--muted); font-size: 10px; }
+.dex-canvas { width: 76px; height: 76px; border: 1px solid var(--line); border-radius: 10px; background: #0b1521; }
+.dex-img { width: 76px; height: 76px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #ffffff; }
+.dex-same { margin: 0; align-self: center; color: var(--muted); font-size: 11px; }
 .help-boss-map { border-color: rgba(255, 209, 102, 0.25) !important; }
 .help-boss-map > summary strong, .help-boss-map > summary::after { color: var(--gold); }
 .help-body { padding: 0 18px 18px; color: #9db1c2; font-size: 12px; line-height: 1.8; }
@@ -497,3 +507,10 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.setting-row.stacked > div.file-actions { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
+.file-btn { padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px; background: #101c2a; color: #a9b8c9; font-size: 11px; cursor: pointer; transition: border-color 150ms ease, color 150ms ease, background 150ms ease; }
+.file-btn:hover { border-color: var(--mint-dark); color: var(--text); }
+.file-btn.subtle { border-color: rgba(255, 97, 120, 0.35); color: #ff9dab; }
+.file-btn.subtle:hover { border-color: #ff6178; background: rgba(255, 97, 120, 0.08); }
+.file-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
