@@ -78,6 +78,14 @@ const ui = {
   mapCards: byId("map-cards"),
   mapStartButton: byId("map-start-btn"),
   mapBackButton: byId("map-back-btn"),
+  modeToggle: byId("mode-toggle"),
+  endlessGearButton: byId("endless-gear-btn"),
+  endlessSettings: byId("endless-settings-overlay"),
+  endlessMapToggle: byId("endless-map-toggle"),
+  endlessScaleToggle: byId("endless-scale-toggle"),
+  endlessBossToggle: byId("endless-boss-toggle"),
+  endlessSettingsCloseButton: byId("endless-settings-close-btn"),
+  endlessBestRound: byId("endless-best-round"),
   startButton: byId("start-btn"),
   restartButton: byId("restart-btn"),
   menuButton: byId("menu-btn"),
@@ -103,6 +111,10 @@ const ui = {
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const rotateToward = (current, target, maxDelta) => {
+  const diff = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+  return current + clamp(diff, -maxDelta, maxDelta);
+};
 const random = (min, max) => min + Math.random() * (max - min);
 const distanceSquared = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
 const formatScore = (value) => Math.round(value).toLocaleString("zh-CN");
@@ -374,10 +386,15 @@ class Input {
   }
 
   bindKeyboard() {
-    const blocked = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+    const blocked = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
     window.addEventListener("keydown", (event) => {
       if ([ui.homeButton, ui.pauseMenuButton].includes(event.target) && ["Enter", "Space"].includes(event.code)) return;
       if (!event.repeat && event.code === "Escape") {
+        if (!ui.endlessSettings.hidden) {
+          event.preventDefault();
+          this.game.closeEndlessSettings();
+          return;
+        }
         if (!ui.help.hidden) {
           event.preventDefault();
           this.game.closeHelp();
@@ -389,7 +406,7 @@ class Input {
           return;
         }
       }
-      if (!ui.help.hidden || !ui.settings.hidden) return;
+      if (!ui.help.hidden || !ui.settings.hidden || !ui.endlessSettings.hidden) return;
       if (this.game.mapSelectOpen) {
         if (!["Enter", "Escape", "KeyP"].includes(event.code)) return;
         event.preventDefault();
@@ -573,6 +590,28 @@ class Game {
       this.badges = JSON.parse(localStorage.getItem("star-ring-badges") || "[]");
       if (!Array.isArray(this.badges)) this.badges = [];
     } catch {}
+    this.mode = "classic";
+    try {
+      const savedMode = localStorage.getItem("star-ring-mode");
+      if (savedMode === "classic" || savedMode === "endless") this.mode = savedMode;
+    } catch {}
+    this.endless = { map: "random", scale: 20, boss: "every" };
+    try {
+      const cfg = JSON.parse(localStorage.getItem("star-ring-endless-cfg") || "null");
+      if (cfg && typeof cfg === "object") {
+        if (["random", "cycle", "fixed"].includes(cfg.map)) this.endless.map = cfg.map;
+        if ([15, 20, 25].includes(cfg.scale)) this.endless.scale = cfg.scale;
+        if (["every", "first"].includes(cfg.boss)) this.endless.boss = cfg.boss;
+      }
+    } catch {}
+    this.endlessBest = 0;
+    try {
+      this.endlessBest = Number(localStorage.getItem("star-ring-endless-best")) || 0;
+    } catch {}
+    this.endlessRound = 0;
+    this.endlessHpMul = 1;
+    this.endlessSpdMul = 1;
+    this.endlessMapIndex = 0;
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
     this.inBossArena = false;
     this.mapSelectOpen = false;
@@ -596,8 +635,8 @@ class Game {
     this.updateLookControl();
     this.updateAutoFireControl();
     this.updateLangControl();
+    this.renderModeUI();
     ui.menuBest.textContent = formatScore(this.highScore);
-    ui.menuMapName.textContent = I18N.t(this.map.nameKey);
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && this.state === "playing") this.pause();
     });
@@ -609,6 +648,48 @@ class Game {
     ui.startButton.addEventListener("click", () => this.openMapSelect());
     ui.mapStartButton.addEventListener("click", () => this.start());
     ui.mapBackButton.addEventListener("click", () => this.closeMapSelect());
+    ui.modeToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-mode]");
+      if (!button) return;
+      this.setMode(button.dataset.mode);
+    });
+    ui.modeToggle.addEventListener("keydown", (event) => {
+      if (event.code !== "Enter" && event.code !== "Space") return;
+      if (event.target.closest("#endless-gear-btn")) return;
+      const option = event.target.closest("[data-mode]");
+      if (!option) return;
+      event.preventDefault();
+      this.setMode(option.dataset.mode);
+    });
+    ui.endlessGearButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.openEndlessSettings();
+    });
+    ui.endlessMapToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-endless-map]");
+      if (!button) return;
+      this.endless.map = button.dataset.endlessMap;
+      this.saveEndlessConfig();
+      this.updateEndlessControls();
+    });
+    ui.endlessScaleToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-endless-scale]");
+      if (!button) return;
+      this.endless.scale = Number(button.dataset.endlessScale);
+      this.saveEndlessConfig();
+      this.updateEndlessControls();
+    });
+    ui.endlessBossToggle.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-endless-boss]");
+      if (!button) return;
+      this.endless.boss = button.dataset.endlessBoss;
+      this.saveEndlessConfig();
+      this.updateEndlessControls();
+    });
+    ui.endlessSettingsCloseButton.addEventListener("click", () => this.closeEndlessSettings());
+    ui.endlessSettings.addEventListener("click", (event) => {
+      if (event.target === ui.endlessSettings) this.closeEndlessSettings();
+    });
     ui.restartButton.addEventListener("click", () => this.start());
     ui.pauseMenuButton.addEventListener("click", () => this.goToMenu());
     ui.resumeButton.addEventListener("click", () => this.resume());
@@ -684,9 +765,11 @@ class Game {
     else if (this.state === "paused") ui.pauseButton.textContent = I18N.t("hud.resume");
     if (this.map) {
       ui.minimapName.textContent = I18N.t(this.map.nameKey);
-      ui.menuMapName.textContent = I18N.t(this.map.nameKey);
+      ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
     }
     if (this.mapSelectOpen) this.renderMapCards();
+    this.renderModeUI();
+    this.updateEndlessControls();
     if (this.state === "upgrade") this.renderUpgradeCards();
     if (this.state === "victory" || this.state === "gameover") this.applyResultPanel();
     if (this.announcement && !ui.announcement.hidden) this.applyAnnouncement();
@@ -1276,7 +1359,6 @@ class Game {
     this.clampCamera();
     this.bullets = [];
     this.enemyBullets = [];
-    this.pickups = [];
     this.powerups = [];
     this.powerupSpawnTimer = 8;
     this.powerupPointIndex = 0;
@@ -1435,10 +1517,117 @@ class Game {
     }
   }
 
+  setMode(mode) {
+    if (mode !== "classic" && mode !== "endless") return;
+    if (mode === this.mode) return;
+    this.mode = mode;
+    try {
+      localStorage.setItem("star-ring-mode", mode);
+    } catch {}
+    this.audio.tone(480, 0.08, "sine", 0.018, 720);
+    this.renderModeUI();
+  }
+
+  saveEndlessConfig() {
+    try {
+      localStorage.setItem("star-ring-endless-cfg", JSON.stringify(this.endless));
+    } catch {}
+  }
+
+  updateEndlessControls() {
+    ui.endlessMapToggle.querySelectorAll("[data-endless-map]").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.endlessMap === this.endless.map));
+    });
+    ui.endlessScaleToggle.querySelectorAll("[data-endless-scale]").forEach((button) => {
+      button.setAttribute("aria-checked", String(Number(button.dataset.endlessScale) === this.endless.scale));
+    });
+    ui.endlessBossToggle.querySelectorAll("[data-endless-boss]").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.endlessBoss === this.endless.boss));
+    });
+    ui.endlessBestRound.textContent = this.endlessBest > 0 ? I18N.t("hud.roundN", { n: this.endlessBest }) : "—";
+  }
+
+  renderModeUI() {
+    ui.modeToggle.querySelectorAll("[data-mode]").forEach((button) => {
+      button.setAttribute("aria-checked", String(button.dataset.mode === this.mode));
+    });
+    const endless = this.mode === "endless";
+    ui.mapStartButton.textContent = endless ? I18N.t("map.startEndless") : I18N.t("map.enter");
+    if (this.state === "menu") ui.menuMapName.textContent = endless ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
+  }
+
+  openEndlessSettings() {
+    if (!ui.endlessSettings.hidden) return;
+    this.updateEndlessControls();
+    ui.endlessSettings.hidden = false;
+  }
+
+  closeEndlessSettings() {
+    ui.endlessSettings.hidden = true;
+  }
+
+  isEndlessPlainFinal() {
+    return this.mode === "endless" && this.endless.boss === "first" && this.endlessRound > 1;
+  }
+
+  endlessSpeedBonus() {
+    return { 15: 4, 20: 6, 25: 8 }[this.endless.scale];
+  }
+
+  pickEndlessMap() {
+    if (this.endless.map === "random") return MAP_DEFS[Math.floor(Math.random() * MAP_DEFS.length)];
+    if (this.endless.map === "cycle") {
+      const map = MAP_DEFS[this.endlessMapIndex % MAP_DEFS.length];
+      this.endlessMapIndex += 1;
+      return map;
+    }
+    return MAP_DEFS.find((map) => map.id === this.selectedMapId);
+  }
+
+  startNextRound() {
+    this.endlessRound += 1;
+    this.endlessHpMul *= 1 + this.endless.scale / 100;
+    this.endlessSpdMul *= 1 + this.endlessSpeedBonus() / 100;
+    this.audio.stopLaserPrep();
+    const player = this.player;
+    player.hp = Math.min(player.maxHp, player.hp + 40);
+    this.map = this.pickEndlessMap();
+    this.inBossArena = false;
+    this.createMap();
+    this.enemies = [];
+    this.bullets = [];
+    this.enemyBullets = [];
+    this.powerups = [];
+    this.particles = [];
+    this.rings = [];
+    this.powerupSpawnTimer = 8;
+    this.powerupPointIndex = 0;
+    this.powerupToastTime = 0;
+    ui.powerupToast.hidden = true;
+    player.x = this.world.width / 2;
+    player.y = this.world.height / 2;
+    player.prevX = player.x;
+    player.prevY = player.y;
+    player.vx = 0;
+    player.vy = 0;
+    this.camera.x = player.x;
+    this.camera.y = player.y;
+    this.cameraAimX = 0;
+    this.cameraAimY = 0;
+    this.clampCamera();
+    ui.minimapName.textContent = I18N.t(this.map.nameKey);
+    this.pendingVictory = false;
+    this.endTimer = 0;
+    this.intermission = 0;
+    this.beginWave(1);
+    this.showAnnouncement("endless.roundN", "endless.roundNSub", { n: this.endlessRound }, { hp: this.endless.scale, spd: this.endlessSpeedBonus() });
+  }
+
   openMapSelect() {
     if (!["menu", "paused"].includes(this.state) || this.mapSelectOpen) return;
     this.mapSelectionId = this.selectedMapId;
     this.mapSelectOpen = true;
+    this.renderModeUI();
     this.renderMapCards();
     ui.mapOverlay.hidden = false;
   }
@@ -1519,7 +1708,16 @@ class Game {
     this.powerups = [];
     this.particles = [];
     this.rings = [];
-    this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
+    this.endlessRound = 0;
+    this.endlessHpMul = 1;
+    this.endlessSpdMul = 1;
+    if (this.mode === "endless") {
+      this.endlessRound = 1;
+      this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
+      this.endlessMapIndex = MAP_DEFS.findIndex((map) => map.id === this.selectedMapId) + 1;
+    } else {
+      this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
+    }
     this.inBossArena = false;
     this.closeMapSelect();
     ui.minimapName.textContent = I18N.t(this.map.nameKey);
@@ -1600,6 +1798,7 @@ class Game {
     ui.touchControls.classList.toggle("active", this.input.touchMode);
     document.body.classList.add("game-active");
     this.beginWave(1);
+    if (this.mode === "endless") this.showAnnouncement("endless.roundN", "endless.round1Sub", { n: 1 });
     this.updateHUD();
   }
 
@@ -1609,7 +1808,7 @@ class Game {
     this.input.reset();
     this.closeMapSelect();
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
-    ui.menuMapName.textContent = I18N.t(this.map.nameKey);
+    ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
     this.player = null;
     this.enemies = [];
     this.bullets = [];
@@ -1625,6 +1824,7 @@ class Game {
     ui.upgrade.hidden = true;
     ui.settings.hidden = true;
     ui.help.hidden = true;
+    ui.endlessSettings.hidden = true;
     ui.hud.hidden = true;
     ui.touchControls.classList.remove("active");
     ui.pauseButton.disabled = true;
@@ -1644,7 +1844,7 @@ class Game {
     this.spawnTimer = 0.75;
     this.prismTimer = random(8, 20);
     this.intermission = 0;
-    if (number === 5) {
+    if (number === 5 && !this.isEndlessPlainFinal()) {
       this.enterBossArena();
       this.spawnEnemy("boss");
       this.spawnRemaining -= 1;
@@ -1701,7 +1901,10 @@ class Game {
     if (this.pendingVictory) {
       this.endTimer -= dt;
       this.updateEffects(dt);
-      if (this.endTimer <= 0) this.finish(true);
+      if (this.endTimer <= 0) {
+        if (this.mode === "endless") this.startNextRound();
+        else this.finish(true);
+      }
       return;
     }
     this.updateMapHazards(dt);
@@ -1786,7 +1989,7 @@ class Game {
       player.facing += clamp(difference, -maxTurn, maxTurn);
     }
     player.shotTimer -= dt;
-    const firing = this.input.pointer.down || this.autoFire;
+    const firing = this.input.pointer.down || this.autoFire || this.input.keys.has("Space");
     if (firing && player.shotTimer <= 0) this.shoot();
     if (!firing) player.shotTimer = 0;
   }
@@ -1941,9 +2144,9 @@ class Game {
       vx: 0,
       vy: 0,
       radius: stats.radius,
-      hp: stats.hp * scale,
-      maxHp: stats.hp * scale,
-      speed: stats.speed * (1 + Math.max(0, this.wave - 1) * 0.035),
+      hp: stats.hp * scale * this.endlessHpMul,
+      maxHp: stats.hp * scale * this.endlessHpMul,
+      speed: stats.speed * (1 + Math.max(0, this.wave - 1) * 0.035) * this.endlessSpdMul,
       damage: stats.damage,
       xp: stats.xp,
       score: stats.score,
@@ -1968,6 +2171,7 @@ class Game {
       stateTime: 0,
       cooldown: random(1, 2),
       aim: 0,
+      faceAngle: type === "dasher" ? Math.atan2(this.player.y - y, this.player.x - x) : 0,
       dashHitId: -1,
       droneHit: 0
     };
@@ -2039,6 +2243,7 @@ class Game {
             enemy.x += steer.nx * enemy.speed * dt * slowFactor;
             enemy.y += steer.ny * enemy.speed * dt * slowFactor;
             enemy.cooldown -= dt;
+            enemy.faceAngle = rotateToward(enemy.faceAngle, Math.atan2(dy, dx), 9 * dt);
             const clearCharge = this.map.id !== "gravity" || this.portals.every((portal, index) => index === enemy.navigationPortal || (enemy.portalCooldown > 0 && index === enemy.portalExitIndex) || !segmentHitsCircle(enemy.x, enemy.y, player.x, player.y, portal.x, portal.y, enemy.radius + 28));
             if (enemy.cooldown <= 0 && distance < 370 && clearCharge) {
               enemy.state = "telegraph";
@@ -2047,9 +2252,11 @@ class Game {
             }
           } else if (enemy.state === "telegraph") {
             enemy.stateTime -= dt;
+            enemy.faceAngle = rotateToward(enemy.faceAngle, enemy.aim, 7 * dt);
             if (enemy.stateTime <= 0) {
               enemy.state = "dash";
               enemy.stateTime = 0.38;
+              enemy.faceAngle = enemy.aim;
               enemy.vx = Math.cos(enemy.aim) * 485;
               enemy.vy = Math.sin(enemy.aim) * 485;
             }
@@ -2640,7 +2847,11 @@ class Game {
     if (this.wave >= 5) {
       this.pendingVictory = true;
       this.endTimer = 1.7;
-      this.showAnnouncement("announce.sectorCleared", "announce.sectorClearedSub");
+      if (this.mode === "endless") {
+        this.showAnnouncement("endless.roundCleared", "endless.roundClearedSub", { n: this.endlessRound }, { n: this.endlessRound + 1 });
+      } else {
+        this.showAnnouncement("announce.sectorCleared", "announce.sectorClearedSub");
+      }
       return;
     }
     this.intermission = 2.7;
@@ -2707,6 +2918,13 @@ class Game {
         localStorage.setItem("star-ring-badges", JSON.stringify(this.badges));
       } catch {}
     }
+    if (!victory && this.mode === "endless" && this.endlessRound > this.endlessBest) {
+      this.endlessBest = this.endlessRound;
+      try {
+        localStorage.setItem("star-ring-endless-best", String(this.endlessBest));
+      } catch {}
+      this.updateEndlessControls();
+    }
     this.lastResult = { victory, isNewBest };
     this.applyResultPanel();
     ui.result.hidden = false;
@@ -2731,7 +2949,7 @@ class Game {
     ui.resultEyebrow.textContent = victory ? "RING BREACHED" : "SIGNAL LOST";
     ui.resultEyebrow.style.color = victory ? "#64fbd2" : "#ff6178";
     ui.resultTitle.textContent = I18N.t(victory ? "result.victory" : "result.defeat");
-    ui.resultSubtitle.textContent = victory ? I18N.t("result.victorySub") : I18N.t("result.defeatSub", { n: this.wave });
+    ui.resultSubtitle.textContent = victory ? I18N.t("result.victorySub") : (this.mode === "endless" ? I18N.t("result.defeatEndless", { n: this.endlessRound }) : I18N.t("result.defeatSub", { n: this.wave }));
     ui.resultScore.textContent = formatScore(this.score);
     ui.resultKills.textContent = String(this.kills);
     ui.resultTime.textContent = formatTime(this.runTime);
@@ -2786,7 +3004,8 @@ class Game {
     ui.hpText.textContent = `${Math.ceil(player.hp)} / ${player.maxHp}`;
     ui.hpFill.style.width = `${clamp(player.hp / player.maxHp * 100, 0, 100)}%`;
     ui.hpMeter.classList.toggle("low", player.hp / player.maxHp < 0.3);
-    ui.waveLabel.textContent = this.wave === 5 ? I18N.t("hud.finalLabel") : I18N.t("hud.waveN", { n: this.wave });
+    const waveLabel = this.wave === 5 && !this.isEndlessPlainFinal() ? I18N.t("hud.finalLabel") : I18N.t("hud.waveN", { n: this.wave });
+    ui.waveLabel.textContent = this.mode === "endless" ? `${I18N.t("hud.roundN", { n: this.endlessRound })} · ${waveLabel}` : waveLabel;
     const remaining = this.spawnRemaining + this.enemies.length;
     ui.waveDetail.textContent = this.intermission > 0 ? I18N.t("hud.cleared") : I18N.t("hud.targets", { n: remaining });
     ui.waveFill.style.width = `${this.intermission > 0 ? 100 : clamp(this.waveKills / this.waveTotal * 100, 0, 100)}%`;
@@ -3453,7 +3672,7 @@ class Game {
         context.stroke();
       }
     } else if (enemy.type === "dasher") {
-      const angle = enemy.state === "hunt" ? Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x) : enemy.aim;
+      const angle = enemy.faceAngle !== undefined ? enemy.faceAngle : enemy.aim;
       const dasherImg = enemy.state === "hunt" ? ENEMY67_IMG.dasherIdle : ENEMY67_IMG.dasherDash;
       if (this.look !== "67" || !this.drawEnemyImage67(context, enemy, dasherImg, 1.15, angle + Math.PI / 2)) {
         context.rotate(angle);

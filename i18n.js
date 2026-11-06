@@ -80,6 +80,7 @@ I18N.zh = {
     sec: "{s}s",
     waveN: "第 {n} 波",
     finalLabel: "最终波 · 首领战",
+    roundN: "第 {n} 关",
     cleared: "区域已清理",
     targets: "{n} 个目标",
     boss: "星环监管者",
@@ -103,7 +104,8 @@ I18N.zh = {
     sub1: "清除所有追击单位",
     sub2: "注意远程火力",
     sub3: "避开蓄力冲刺",
-    sub4: "稳住阵线，迎接监管者"
+    sub4: "稳住阵线，迎接监管者",
+    sub5: "清除所有敌人，通过本关"
   },
   announce: {
     sectorCleared: "星域已清理",
@@ -117,7 +119,8 @@ I18N.zh = {
     victory: "突围成功",
     victorySub: "星环已突破，星域重新回应你的信号。",
     defeat: "突围失败",
-    defeatSub: "抵达第 {n} 波，调整构筑后再次挑战。"
+    defeatSub: "抵达第 {n} 波，调整构筑后再次挑战。",
+    defeatEndless: "抵达第 {n} 关，调整构筑后再次挑战。"
   },
   toast: {
     buff: "{name} · {s} 秒"
@@ -146,7 +149,20 @@ I18N.zh = {
     core: { name: "星环之核", desc: "" },
     random: { name: "随机星域", desc: "随机进入一张地图，挑战未知地形。" },
     unknown: "未知",
-    cleared: "已通关"
+    cleared: "已通关",
+    enter: "进入星域",
+    startEndless: "开始无尽突围"
+  },
+  mode: {
+    classic: "经典模式",
+    endless: "无尽模式"
+  },
+  endless: {
+    roundN: "第 {n} 关",
+    round1Sub: "无尽试炼开始 · 每关敌群都会强化",
+    roundNSub: "敌群强化 · 血量+{hp}% 速度+{spd}% · 船体上限+40",
+    roundCleared: "第 {n} 关通过",
+    roundClearedSub: "船体上限+40 · 进入第 {n} 关"
   },
   buff: {
     shield: "能量护盾",
@@ -186,6 +202,7 @@ I18N.en = {
     sec: "{s}s",
     waveN: "WAVE {n}",
     finalLabel: "FINAL WAVE · BOSS",
+    roundN: "ROUND {n}",
     cleared: "SECTOR CLEARED",
     targets: "{n} TARGETS",
     boss: "Ring Warden",
@@ -209,7 +226,8 @@ I18N.en = {
     sub1: "Clear all pursuing units",
     sub2: "Watch the ranged fire",
     sub3: "Evade the charged dashes",
-    sub4: "Hold the line — the Warden awaits"
+    sub4: "Hold the line — the Warden awaits",
+    sub5: "Clear all enemies to pass the round"
   },
   announce: {
     sectorCleared: "SECTOR CLEARED",
@@ -223,7 +241,8 @@ I18N.en = {
     victory: "BREAKOUT SUCCESSFUL",
     victorySub: "The Ring is broken — the sector answers your signal again.",
     defeat: "BREAKOUT FAILED",
-    defeatSub: "Reached wave {n} — adjust your build and try again."
+    defeatSub: "Reached wave {n} — adjust your build and try again.",
+    defeatEndless: "Reached round {n} — adjust your build and try again."
   },
   toast: {
     buff: "{name} · {s}s"
@@ -252,7 +271,20 @@ I18N.en = {
     core: { name: "Ring Core", desc: "" },
     random: { name: "Random Sector", desc: "Enter a random map and face the unknown." },
     unknown: "???",
-    cleared: "CLEARED"
+    cleared: "CLEARED",
+    enter: "Enter Sector",
+    startEndless: "Start Endless Run"
+  },
+  mode: {
+    classic: "Classic",
+    endless: "Endless"
+  },
+  endless: {
+    roundN: "ROUND {n}",
+    round1Sub: "Endless trial begins — enemies grow stronger every round",
+    roundNSub: "ENEMIES BUFFED · HP +{hp}% SPD +{spd}% · MAX HULL +40",
+    roundCleared: "ROUND {n} CLEARED",
+    roundClearedSub: "MAX HULL +40 · ENTERING ROUND {n}"
   },
   buff: {
     shield: "Energy Shield",

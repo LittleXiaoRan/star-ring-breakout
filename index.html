@@ -107,7 +107,7 @@
 
           <div class="instructions">
             <div><b>01</b><section><strong data-en="Move">移动</strong><p><kbd>WASD</kbd> <span data-en="/ Arrow Keys">/ 方向键</span></p></section></div>
-            <div><b>02</b><section><strong data-en="Shoot">射击</strong><p data-en="Mouse aim · Hold to fire">鼠标瞄准 · 按住射击</p></section></div>
+            <div><b>02</b><section><strong data-en="Shoot">射击</strong><p data-en="Mouse aim · Space / hold to fire">鼠标瞄准 · 空格/按住射击</p></section></div>
             <div><b>03</b><section><strong data-en="Dash">冲刺</strong><p><kbd>SHIFT</kbd> <span data-en="/ RMB">/ 鼠标右键</span></p><small data-en="Phase through bullets · Ramming hurts both">穿越弹幕 · 撞敌双方扣血</small></section></div>
           </div>
 
@@ -119,6 +119,17 @@
 
       <div id="map-overlay" class="overlay map-overlay" hidden>
         <section class="panel map-panel">
+          <div class="map-topbar">
+            <div id="mode-toggle" class="mode-toggle" role="radiogroup" aria-label="游戏模式" data-en-aria="Game mode">
+              <div class="mode-option" role="radio" aria-checked="true" tabindex="0" data-mode="classic">
+                <span class="mode-name" data-en="Classic">经典模式</span>
+              </div>
+              <div class="mode-option" role="radio" aria-checked="false" tabindex="0" data-mode="endless">
+                <span class="mode-name" data-en="Endless">无尽模式</span>
+                <button id="endless-gear-btn" class="gear-btn" type="button" aria-label="无尽模式设置" title="无尽模式设置" data-en-aria="Endless mode settings" data-en-title="Endless mode settings">⚙</button>
+              </div>
+            </div>
+          </div>
           <p class="eyebrow">SELECT SECTOR</p>
           <h2 data-en="Choose Sector">选择星域</h2>
           <p class="panel-subtitle" data-en="Different terrain and hazards — waves and upgrades stay the same">地形与危险机制不同，波次与强化规则一致</p>
@@ -127,6 +138,40 @@
             <button id="map-back-btn" class="secondary-btn" type="button" data-en="Back">返回</button>
             <button id="map-start-btn" class="primary-btn" type="button" data-en="Enter Sector">进入星域</button>
           </div>
+        </section>
+      </div>
+
+      <div id="endless-settings-overlay" class="overlay endless-settings-overlay" hidden>
+        <section class="panel compact-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="endless-settings-title">
+          <p class="eyebrow">ENDLESS CONFIG</p>
+          <h2 id="endless-settings-title" data-en="Endless Mode Settings">无尽模式设置</h2>
+          <p class="panel-subtitle" data-en="Rules for endless rounds">无尽模式的关卡规则</p>
+          <p id="endless-map-note" class="endless-map-note" data-en="Endless mode: the selected map is round 1; later rounds follow the gear settings.">无尽模式：选中的地图作为第 1 关，之后的关卡按齿轮设置决定。</p>
+          <div class="setting-row stacked">
+            <div><strong data-en="Map per Round">每关地图</strong><small data-en="How the sector is chosen for each round">每关星域的选择方式</small></div>
+            <div id="endless-map-toggle" class="segmented" role="radiogroup" aria-label="每关地图" data-en-aria="Map per round">
+              <button type="button" role="radio" aria-checked="true" data-endless-map="random" data-en="Random">每关随机</button>
+              <button type="button" role="radio" aria-checked="false" data-endless-map="cycle" data-en="Cycle">按序轮换</button>
+              <button type="button" role="radio" aria-checked="false" data-endless-map="fixed" data-en="Fixed">全程固定</button>
+            </div>
+          </div>
+          <div class="setting-row stacked">
+            <div><strong data-en="Enemy Scaling">怪物增幅</strong><small data-en="Multiplied onto enemy HP and speed every round">每关对怪物血量与速度的加成</small></div>
+            <div id="endless-scale-toggle" class="segmented" role="radiogroup" aria-label="怪物增幅" data-en-aria="Enemy scaling">
+              <button type="button" role="radio" aria-checked="false" data-endless-scale="15" data-en="Mild +15%/+4%">温和 +15%/+4%</button>
+              <button type="button" role="radio" aria-checked="true" data-endless-scale="20" data-en="Standard +20%/+6%">标准 +20%/+6%</button>
+              <button type="button" role="radio" aria-checked="false" data-endless-scale="25" data-en="Brutal +25%/+8%">凶悍 +25%/+8%</button>
+            </div>
+          </div>
+          <div class="setting-row stacked">
+            <div><strong data-en="Boss">首领</strong><small data-en="Whether the round-5 Warden appears every round">第5波监管者是否每关出现</small></div>
+            <div id="endless-boss-toggle" class="segmented" role="radiogroup" aria-label="首领" data-en-aria="Boss">
+              <button type="button" role="radio" aria-checked="true" data-endless-boss="every" data-en="Every Round">每关都打</button>
+              <button type="button" role="radio" aria-checked="false" data-endless-boss="first" data-en="First Round Only">仅第1关</button>
+            </div>
+          </div>
+          <p class="endless-best"><span data-en="Farthest Round">最远抵达</span><strong id="endless-best-round">—</strong></p>
+          <button id="endless-settings-close-btn" class="primary-btn" type="button" data-en="Done">完成</button>
         </section>
       </div>
 
@@ -197,7 +242,7 @@
                   <h3 data-en="Basic Controls">基本操作</h3>
                   <ul class="help-controls">
                     <li><kbd>WASD</kbd><span><strong data-en="Move">移动</strong><small data-en="Move with WASD or the arrow keys.">使用 WASD 或方向键控制飞船移动。</small></span></li>
-                    <li><kbd data-en="Mouse">鼠标</kbd><span><strong data-en="Aim &amp; Shoot">瞄准与射击</strong><small data-en="Move the mouse to aim, hold the left button to fire.">移动鼠标瞄准，按住鼠标左键持续射击。</small></span></li>
+                    <li><kbd data-en="Mouse / Space">鼠标 / 空格</kbd><span><strong data-en="Aim &amp; Shoot">瞄准与射击</strong><small data-en="Move the mouse to aim, hold the left button or Space to fire.">移动鼠标瞄准，按住鼠标左键或空格持续射击。</small></span></li>
                     <li><kbd>SHIFT</kbd><span><strong data-en="Phase Dash">相位冲刺</strong><small data-en="Press Shift or right-click to dash. While dashing you pass through enemy bullets; ramming an enemy hurts you both.">按 Shift 或鼠标右键冲刺。冲刺期间可以穿越敌方弹幕；撞到敌人时，双方都会受到伤害。</small></span></li>
                     <li><kbd>P / ESC</kbd><span><strong data-en="Pause">暂停</strong><small data-en="Pause or resume the game.">暂停或继续游戏。</small></span></li>
                     <li><kbd data-en="Touch">触屏</kbd><span><strong data-en="Touch Controls">触屏操作</strong><small data-en="Use the left stick to move and the right button to dash. Hold the game area to fire toward your finger, drag to aim, and release to stop.">使用左侧摇杆移动，点击右侧按钮冲刺。按住游戏画面朝触点持续射击，拖动手指调整方向，松手停止。</small></span></li>
