@@ -90,6 +90,10 @@ const ui = {
   resultLevel: byId("result-level"),
   newBest: byId("new-best"),
   menuBest: byId("menu-best-score"),
+  menuBestWave: byId("menu-best-wave"),
+  menuEndlessScore: byId("menu-endless-score"),
+  menuEndlessWave: byId("menu-endless-wave"),
+  menuEndlessRound: byId("menu-endless-round"),
   menuMapName: byId("menu-map-name"),
   minimapName: byId("minimap-name"),
   mapOverlay: byId("map-overlay"),
@@ -687,8 +691,16 @@ class Game {
     this.minimapContext = ui.minimapCanvas.getContext("2d");
     this.buffElements = Object.fromEntries(BUFF_IDS.map((id) => [id, ui.buffBar.querySelector(`[data-buff="${id}"]`)]));
     this.highScore = 0;
+    this.bestWave = 0;
     try {
       this.highScore = Number(localStorage.getItem("star-ring-high-score")) || 0;
+      this.bestWave = Number(localStorage.getItem("star-ring-best-wave")) || 0;
+    } catch {}
+    this.endlessHighScore = 0;
+    this.endlessBestWave = 0;
+    try {
+      this.endlessHighScore = Number(localStorage.getItem("star-ring-endless-high-score")) || 0;
+      this.endlessBestWave = Number(localStorage.getItem("star-ring-endless-best-wave")) || 0;
     } catch {}
     this.autoFire = false;
     try {
@@ -764,7 +776,7 @@ class Game {
     this.updateUnlimitedControl();
     this.updateLangControl();
     this.renderModeUI();
-    ui.menuBest.textContent = formatScore(this.highScore);
+    this.refreshMenuRecords();
     document.addEventListener("visibilitychange", () => {
       if (document.hidden && this.state === "playing") this.pause();
     });
@@ -1028,6 +1040,7 @@ class Game {
     if (this.mapSelectOpen) this.renderMapCards();
     this.renderModeUI();
     this.updateEndlessControls();
+    this.refreshMenuRecords();
     if (this.state === "upgrade") this.renderUpgradeCards();
     if (this.state === "victory" || this.state === "gameover") this.applyResultPanel();
     if (this.announcement && !ui.announcement.hidden) this.applyAnnouncement();
@@ -2139,7 +2152,7 @@ class Game {
     ui.touchControls.classList.remove("active");
     ui.pauseButton.disabled = true;
     ui.pauseButton.textContent = I18N.t("hud.pause");
-    ui.menuBest.textContent = formatScore(this.highScore);
+    this.refreshMenuRecords();
     ui.liveStatus.textContent = I18N.t("hud.backHome");
     document.body.classList.remove("game-active");
   }
@@ -3239,11 +3252,34 @@ class Game {
     ui.pause.hidden = true;
     ui.upgrade.hidden = true;
     ui.announcement.hidden = true;
-    const isNewBest = this.score > this.highScore;
+    const endlessRun = this.mode === "endless";
+    const prevBest = endlessRun ? this.endlessHighScore : this.highScore;
+    const isNewBest = this.score > prevBest;
     if (isNewBest) {
-      this.highScore = this.score;
+      if (endlessRun) {
+        this.endlessHighScore = this.score;
+        try {
+          localStorage.setItem("star-ring-endless-high-score", String(this.endlessHighScore));
+        } catch {}
+      } else {
+        this.highScore = this.score;
+        try {
+          localStorage.setItem("star-ring-high-score", String(this.highScore));
+        } catch {}
+      }
+    }
+    if (endlessRun) {
+      const waveReached = (this.endlessRound - 1) * 5 + this.wave;
+      if (waveReached > this.endlessBestWave) {
+        this.endlessBestWave = waveReached;
+        try {
+          localStorage.setItem("star-ring-endless-best-wave", String(this.endlessBestWave));
+        } catch {}
+      }
+    } else if (this.wave > this.bestWave) {
+      this.bestWave = this.wave;
       try {
-        localStorage.setItem("star-ring-high-score", String(this.highScore));
+        localStorage.setItem("star-ring-best-wave", String(this.bestWave));
       } catch {}
     }
     if (victory && !this.badges.includes(this.selectedMapId)) {
@@ -3289,7 +3325,15 @@ class Game {
     ui.resultTime.textContent = formatTime(this.runTime);
     ui.resultLevel.textContent = String(this.level);
     ui.newBest.hidden = !isNewBest;
+    this.refreshMenuRecords();
+  }
+
+  refreshMenuRecords() {
     ui.menuBest.textContent = formatScore(this.highScore);
+    ui.menuEndlessScore.textContent = formatScore(this.endlessHighScore);
+    ui.menuBestWave.textContent = this.bestWave > 0 ? I18N.t("hud.waveN", { n: this.bestWave }) : "—";
+    ui.menuEndlessWave.textContent = this.endlessBestWave > 0 ? formatScore(this.endlessBestWave) : "—";
+    ui.menuEndlessRound.textContent = this.endlessBest > 0 ? I18N.t("hud.roundN", { n: this.endlessBest }) : "—";
   }
 
   burst(x, y, color, count = 8, speed = 140, size = 3) {

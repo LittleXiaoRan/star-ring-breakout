@@ -99,6 +99,24 @@
 
       <div id="menu-overlay" class="overlay menu-overlay">
         <section class="panel menu-panel">
+          <div class="menu-records" role="group" aria-label="历史最高纪录" data-en-aria="All-time records">
+            <div class="menu-record-group">
+              <span class="menu-record-mode" data-en="Classic">经典模式</span>
+              <div class="menu-record-stats">
+                <span class="menu-record-stat"><span data-en="High Score">最高分</span><strong id="menu-best-score">0</strong></span>
+                <span class="menu-record-stat"><span data-en="Best Wave">最高波次</span><strong id="menu-best-wave">—</strong></span>
+              </div>
+            </div>
+            <div class="menu-record-divider" aria-hidden="true"></div>
+            <div class="menu-record-group endless">
+              <span class="menu-record-mode" data-en="Endless">无尽模式</span>
+              <div class="menu-record-stats">
+                <span class="menu-record-stat"><span data-en="High Score">最高分</span><strong id="menu-endless-score">0</strong></span>
+                <span class="menu-record-stat"><span data-en="Total Waves">累计波次</span><strong id="menu-endless-wave">—</strong></span>
+                <span class="menu-record-stat"><span data-en="Farthest Round">最远关卡</span><strong id="menu-endless-round">—</strong></span>
+              </div>
+            </div>
+          </div>
           <div class="menu-emblem" aria-hidden="true"><i></i><b></b></div>
           <p class="eyebrow">ORIGINAL ARCADE <span>/</span> 05 WAVES</p>
           <h1><span data-en="Star Ring">星环</span><span data-en="Breakout">突围</span></h1>
@@ -113,7 +131,7 @@
 
           <p class="menu-map"><span data-en="Current Sector">当前星域</span> <strong id="menu-map-name">星港残骸</strong><span data-en="Pick a map after starting">开始后可以选择地图</span></p>
           <button id="start-btn" class="primary-btn" type="button"><span data-en="Choose Sector · Break Out">选择星域 · 开始突围</span><kbd>ENTER</kbd></button>
-          <p class="menu-record"><span data-en="High Score">历史最高分</span> <strong id="menu-best-score">0</strong><span> · </span><span data-en="Hold screen to aim &amp; fire">按住屏幕瞄准射击</span></p>
+          <p class="menu-aim-hint" data-en="Hold screen to aim &amp; fire">按住屏幕瞄准射击</p>
         </section>
       </div>
 
