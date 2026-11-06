@@ -116,6 +116,7 @@ const ui = {
   settingsSoundToggle: byId("settings-sound-toggle"),
   settingsLookToggle: byId("settings-look-toggle"),
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
+  settingsUnlimitedToggle: byId("settings-unlimited-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
   bgUploadButton: byId("bg-upload-btn"),
@@ -693,6 +694,10 @@ class Game {
     try {
       this.autoFire = localStorage.getItem("star-ring-auto-fire") === "on";
     } catch {}
+    this.unlimited = false;
+    try {
+      this.unlimited = localStorage.getItem("star-ring-unlimited") === "on";
+    } catch {}
     this.look = "classic";
     try {
       const savedLook = localStorage.getItem("star-ring-look");
@@ -756,6 +761,7 @@ class Game {
     this.updateSoundControl();
     this.updateLookControl();
     this.updateAutoFireControl();
+    this.updateUnlimitedControl();
     this.updateLangControl();
     this.renderModeUI();
     ui.menuBest.textContent = formatScore(this.highScore);
@@ -854,6 +860,13 @@ class Game {
         localStorage.setItem("star-ring-auto-fire", this.autoFire ? "on" : "off");
       } catch {}
       this.updateAutoFireControl();
+    });
+    ui.settingsUnlimitedToggle.addEventListener("click", () => {
+      this.unlimited = !this.unlimited;
+      try {
+        localStorage.setItem("star-ring-unlimited", this.unlimited ? "on" : "off");
+      } catch {}
+      this.updateUnlimitedControl();
     });
     ui.settingsLangToggle.addEventListener("click", () => {
       I18N.setLang(I18N.lang === "zh" ? "en" : "zh");
@@ -990,6 +1003,11 @@ class Game {
   updateAutoFireControl() {
     ui.settingsAutoFireToggle.setAttribute("aria-checked", String(this.autoFire));
     ui.settingsAutoFireToggle.querySelector("span").textContent = this.autoFire ? I18N.t("hud.on") : I18N.t("hud.off");
+  }
+
+  updateUnlimitedControl() {
+    ui.settingsUnlimitedToggle.setAttribute("aria-checked", String(this.unlimited));
+    ui.settingsUnlimitedToggle.querySelector("span").textContent = this.unlimited ? I18N.t("hud.on") : I18N.t("hud.off");
   }
 
   updateLangControl() {
@@ -3090,7 +3108,7 @@ class Game {
       { id: "dash", icon: "◇", nameKey: "upg.dash.name", descKey: "upg.dash.desc", max: 3, apply: () => { player.dashDelay *= 0.82; player.dashDamage += 6; } },
       { id: "drone", icon: "◈", nameKey: "upg.drone.name", descKey: "upg.drone.desc", max: 3, apply: () => { player.drones += 1; } },
       { id: "shield", icon: "◯", nameKey: "upg.shield.name", descKey: "upg.shield.desc", max: 1, apply: () => { player.shieldMax = 12; player.shieldReady = true; } }
-    ];
+    ].map((upgrade) => (this.unlimited && upgrade.id !== "shield" ? { ...upgrade, max: Infinity } : upgrade));
   }
 
   getGenericUpgrades() {

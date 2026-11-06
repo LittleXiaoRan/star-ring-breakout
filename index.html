@@ -219,18 +219,22 @@
             <button id="settings-auto-fire-toggle" class="sound-switch" type="button" role="switch" aria-checked="false" aria-label="自动射击" data-en-aria="Auto-fire"><i aria-hidden="true"></i><span>关闭</span></button>
           </div>
           <div class="setting-row">
+            <div><strong data-en="Unlimited Mode">无上限模式</strong><small data-en="Remove level caps from all stackable upgrades">取消所有可叠加技能的上限</small></div>
+            <button id="settings-unlimited-toggle" class="sound-switch" type="button" role="switch" aria-checked="false" aria-label="无上限模式" data-en-aria="Unlimited mode"><i aria-hidden="true"></i><span>关闭</span></button>
+          </div>
+          <div class="setting-row">
             <div><strong data-en="Language">语言</strong><small data-en="Interface language">界面显示语言</small></div>
             <button id="settings-lang-toggle" class="lang-btn" type="button" aria-label="切换语言" data-en-aria="Toggle language"><span id="settings-lang-label">English</span></button>
           </div>
-          <div class="setting-row stacked">
-            <div><strong data-en="Battle Background">战斗背景</strong><small data-en="Upload your own photo as the background during battle; menus stay unchanged">上传自己的照片作为战斗时的背景，菜单界面不变</small></div>
+          <div class="setting-row">
+            <div><strong data-en="Battle Background">战斗背景</strong><small data-en="Upload your own photo as the background during battle">上传自己的照片作为战斗时的背景</small></div>
             <div class="file-actions">
               <button id="bg-upload-btn" class="file-btn" type="button" data-en="Upload Image">上传图片</button>
               <button id="bg-clear-btn" class="file-btn subtle" type="button" data-en="Clear" hidden>清除</button>
               <input id="bg-file-input" type="file" accept="image/*" hidden>
             </div>
           </div>
-          <div class="setting-row stacked">
+          <div class="setting-row">
             <div><strong data-en="Background Music">背景音乐</strong><small data-en="Upload your own music to loop in the background">上传自己的音乐作为背景循环播放</small></div>
             <div class="file-actions">
               <button id="bgm-upload-btn" class="file-btn" type="button" data-en="Upload Music">上传音乐</button>
