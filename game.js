@@ -1863,7 +1863,7 @@ class Game {
 
   endlessSpeedBonus() {
     const base = { 15: 4, 20: 6, 25: 8 }[this.endless.scale];
-    return Math.min(15, base + Math.max(0, this.endlessRound - 1) * 0.5);
+    return base + Math.max(0, this.endlessRound - 1) * 0.5;
   }
 
   pickEndlessMap() {
@@ -2388,7 +2388,8 @@ class Game {
         this.eliteRemaining -= 1;
       }
       this.spawnRemaining -= 1;
-      this.spawnTimer = Math.max(0.26, 0.74 - this.wave * 0.07) * random(0.78, 1.16);
+      const progress = this.mode === "endless" ? this.endlessRound : this.wave;
+      this.spawnTimer = Math.max(0.1, 0.74 - progress * 0.07) * random(0.78, 1.16);
     }
   }
 
@@ -3092,6 +3093,15 @@ class Game {
     ];
   }
 
+  getGenericUpgrades() {
+    const player = this.player;
+    return [
+      { id: "g-damage", icon: "↑", nameKey: "upg.gDamage.name", descKey: "upg.gDamage.desc", max: Infinity, apply: () => { player.damage *= 1.03; } },
+      { id: "g-rapid", icon: "»", nameKey: "upg.gRapid.name", descKey: "upg.gRapid.desc", max: Infinity, apply: () => { player.fireRate *= 1.02; } },
+      { id: "g-vitality", icon: "+", nameKey: "upg.gVitality.name", descKey: "upg.gVitality.desc", max: Infinity, apply: () => { player.maxHp += 5; player.hp = Math.min(player.maxHp, player.hp + 5); } }
+    ];
+  }
+
   showUpgrade() {
     this.state = "upgrade";
     this.input.resetFire();
@@ -3100,6 +3110,7 @@ class Game {
     const pool = this.getUpgradePool();
     const available = pool.filter((upgrade) => (this.player.upgrades[upgrade.id] || 0) < upgrade.max);
     this.currentChoices = shuffled(available).slice(0, 3);
+    if (this.currentChoices.length === 0) this.currentChoices = this.getGenericUpgrades();
     this.renderUpgradeCards();
     ui.upgrade.hidden = false;
     this.audio.upgradeOpen();

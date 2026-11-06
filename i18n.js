@@ -185,7 +185,10 @@ I18N.zh = {
     magnet: { name: "引力采集器", desc: "能量与修复核心的拾取范围提高 45%" },
     dash: { name: "相位增幅", desc: "冲刺冷却缩短 18%，撞击伤害增加 6，撞敌仍会受伤" },
     drone: { name: "环绕利刃", desc: "增加 1 枚环绕刃，持续切割附近敌人" },
-    shield: { name: "再生护盾", desc: "获得可抵挡一次伤害的护盾，每 12 秒再生" }
+    shield: { name: "再生护盾", desc: "获得可抵挡一次伤害的护盾，每 12 秒再生" },
+    gDamage: { name: "伤害增幅", desc: "伤害提高 3%，可无限叠加" },
+    gRapid: { name: "射速增幅", desc: "射击速度提高 2%，可无限叠加" },
+    gVitality: { name: "船体扩容", desc: "最大船体增加 5 并修复 5，可无限叠加" }
   },
   custom: {
     bgSaved: "背景已更新",
@@ -314,7 +317,10 @@ I18N.en = {
     magnet: { name: "Gravity Collector", desc: "Pickup range for energy and repairs +45%" },
     dash: { name: "Phase Amplifier", desc: "Dash cooldown -18%, impact damage +6; ramming still hurts you" },
     drone: { name: "Orbital Blade", desc: "Gain 1 orbiting blade that cuts nearby enemies" },
-    shield: { name: "Regenerative Shield", desc: "Gain a shield that blocks one hit and recharges every 12s" }
+    shield: { name: "Regenerative Shield", desc: "Gain a shield that blocks one hit and recharges every 12s" },
+    gDamage: { name: "Damage Boost", desc: "Damage +3%, stacks without limit" },
+    gRapid: { name: "Fire Rate Boost", desc: "Fire rate +2%, stacks without limit" },
+    gVitality: { name: "Hull Expansion", desc: "Max hull +5 and repair 5, stacks without limit" }
   },
   custom: {
     bgSaved: "Background updated",
