@@ -66,7 +66,11 @@
   function loadMaps() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-      return Array.isArray(saved) ? saved.filter((entry) => entry && typeof entry === "object" && entry.id && typeof entry.name === "string") : [];
+      return Array.isArray(saved)
+        ? saved
+            .filter((entry) => entry && typeof entry === "object" && entry.id && typeof entry.name === "string")
+            .map((entry) => ({ ...entry, desc: typeof entry.desc === "string" && entry.desc !== "undefined" ? entry.desc : "" }))
+        : [];
     } catch {
       return [];
     }
@@ -315,14 +319,14 @@
         if (event.target === els.dialog) this.resolveDialog(null);
       });
       els.dialogInput.addEventListener("keydown", (event) => {
-        if ((event.code === "Enter" || event.code === "NumpadEnter") && !els.dialog.hidden) {
+        if ((event.code === "Enter" || event.code === "NumpadEnter") && !event.isComposing && !els.dialog.hidden) {
           event.preventDefault();
           const primary = els.dialogActions.querySelector(".primary-btn");
           if (primary && !primary.disabled) primary.click();
         }
       });
       els.descInput.addEventListener("keydown", (event) => {
-        if ((event.code === "Enter" || event.code === "NumpadEnter") && !els.dialog.hidden) {
+        if ((event.code === "Enter" || event.code === "NumpadEnter") && !event.isComposing && !els.dialog.hidden) {
           event.preventDefault();
           const primary = els.dialogActions.querySelector(".primary-btn");
           if (primary && !primary.disabled) primary.click();
@@ -790,10 +794,10 @@
         const field = multiline ? els.code : els.dialogInput;
         (multiline ? els.dialogInput : els.code).hidden = true;
         els.descInput.hidden = !input2;
-        els.descInput.value = input2 ? input2.value : "";
+        els.descInput.value = input2 && input2.value != null ? input2.value : "";
         els.descInput.placeholder = input2 ? input2.placeholder || "" : "";
         field.hidden = !input;
-        field.value = input ? input.value : "";
+        field.value = input && input.value != null ? input.value : "";
         field.placeholder = input ? input.placeholder || "" : "";
         field.readOnly = !!(input && input.readonly);
         field.maxLength = Math.max(0, input && input.maxlength != null ? input.maxlength : 16);
