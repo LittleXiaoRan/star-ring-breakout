@@ -120,7 +120,8 @@ I18N.zh = {
     victorySub: "星环已突破，星域重新回应你的信号。",
     defeat: "突围失败",
     defeatSub: "抵达第 {n} 波，调整构筑后再次挑战。",
-    defeatEndless: "抵达第 {n} 关，调整构筑后再次挑战。"
+    defeatEndless: "抵达第 {n} 关，调整构筑后再次挑战。",
+    defeatEndlessReached: "到达第 {wave} 波 · 第 {round} 关"
   },
   toast: {
     buff: "{name} · {s} 秒"
@@ -150,6 +151,7 @@ I18N.zh = {
     random: { name: "随机星域", desc: "随机进入一张地图，挑战未知地形。" },
     unknown: "未知",
     cleared: "已通关",
+    best: "最高 {score}",
     enter: "进入星域",
     startEndless: "开始无尽突围"
   },
@@ -252,7 +254,8 @@ I18N.en = {
     victorySub: "The Ring is broken — the sector answers your signal again.",
     defeat: "BREAKOUT FAILED",
     defeatSub: "Reached wave {n} — adjust your build and try again.",
-    defeatEndless: "Reached round {n} — adjust your build and try again."
+    defeatEndless: "Reached round {n} — adjust your build and try again.",
+    defeatEndlessReached: "REACHED WAVE {wave} · ROUND {round}"
   },
   toast: {
     buff: "{name} · {s}s"
@@ -282,6 +285,7 @@ I18N.en = {
     random: { name: "Random Sector", desc: "Enter a random map and face the unknown." },
     unknown: "???",
     cleared: "CLEARED",
+    best: "BEST {score}",
     enter: "Enter Sector",
     startEndless: "Start Endless Run"
   },

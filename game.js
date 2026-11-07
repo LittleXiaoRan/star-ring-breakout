@@ -90,7 +90,6 @@ const ui = {
   resultLevel: byId("result-level"),
   newBest: byId("new-best"),
   menuBest: byId("menu-best-score"),
-  menuBestWave: byId("menu-best-wave"),
   menuEndlessScore: byId("menu-endless-score"),
   menuEndlessWave: byId("menu-endless-wave"),
   menuEndlessRound: byId("menu-endless-round"),
@@ -691,10 +690,15 @@ class Game {
     this.minimapContext = ui.minimapCanvas.getContext("2d");
     this.buffElements = Object.fromEntries(BUFF_IDS.map((id) => [id, ui.buffBar.querySelector(`[data-buff="${id}"]`)]));
     this.highScore = 0;
-    this.bestWave = 0;
     try {
       this.highScore = Number(localStorage.getItem("star-ring-high-score")) || 0;
-      this.bestWave = Number(localStorage.getItem("star-ring-best-wave")) || 0;
+    } catch {}
+    this.mapBestScores = {};
+    try {
+      const savedMapBest = JSON.parse(localStorage.getItem("star-ring-map-best-scores") || "{}");
+      if (savedMapBest && typeof savedMapBest === "object" && !Array.isArray(savedMapBest)) {
+        this.mapBestScores = savedMapBest;
+      }
     } catch {}
     this.endlessHighScore = 0;
     this.endlessBestWave = 0;
@@ -1876,6 +1880,7 @@ class Game {
     const endless = this.mode === "endless";
     ui.mapStartButton.textContent = endless ? I18N.t("map.startEndless") : I18N.t("map.enter");
     if (this.state === "menu") ui.menuMapName.textContent = endless ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
+    if (this.mapSelectOpen) this.renderMapCards();
   }
 
   openEndlessSettings() {
@@ -1988,8 +1993,11 @@ class Game {
       button.setAttribute("aria-pressed", String(map.id === selectedId));
       button.style.setProperty("--swatch", map.swatch);
       const difficulty = map.id === "random" ? I18N.t("map.unknown") : "★".repeat(map.difficulty);
-      const badge = this.badges.includes(map.id) ? `<span class="map-badge">${I18N.t("map.cleared")}</span>` : "";
-      button.innerHTML = `<span class="map-swatch"></span><span class="map-difficulty">${difficulty}</span><strong>${I18N.t(map.nameKey)}</strong><p>${I18N.t(map.descKey)}</p>${badge}`;
+      const classic = this.mode !== "endless";
+      const badge = classic && this.badges.includes(map.id) ? `<span class="map-badge">${I18N.t("map.cleared")}</span>` : "";
+      const best = classic && map.id !== "random" ? Number(this.mapBestScores[map.id]) || 0 : null;
+      const bestLabel = best === null ? "" : `<span class="map-best">${I18N.t("map.best", { score: best > 0 ? formatScore(best) : "—" })}</span>`;
+      button.innerHTML = `<span class="map-swatch"></span><span class="map-difficulty">${difficulty}</span><strong>${I18N.t(map.nameKey)}</strong><p>${I18N.t(map.descKey)}</p>${badge}${bestLabel}`;
       button.addEventListener("click", () => this.selectMap(map.id));
       ui.mapCards.appendChild(button);
     }
@@ -3276,11 +3284,14 @@ class Game {
           localStorage.setItem("star-ring-endless-best-wave", String(this.endlessBestWave));
         } catch {}
       }
-    } else if (this.wave > this.bestWave) {
-      this.bestWave = this.wave;
-      try {
-        localStorage.setItem("star-ring-best-wave", String(this.bestWave));
-      } catch {}
+    } else {
+      const mapBest = Number(this.mapBestScores[this.selectedMapId]) || 0;
+      if (this.score > mapBest) {
+        this.mapBestScores[this.selectedMapId] = this.score;
+        try {
+          localStorage.setItem("star-ring-map-best-scores", JSON.stringify(this.mapBestScores));
+        } catch {}
+      }
     }
     if (victory && !this.badges.includes(this.selectedMapId)) {
       this.badges.push(this.selectedMapId);
@@ -3316,9 +3327,14 @@ class Game {
 
   applyResultPanel() {
     const { victory, isNewBest } = this.lastResult;
+    const endlessReached = !victory && this.mode === "endless" && this.endlessRound > 1;
     ui.resultEyebrow.textContent = victory ? "RING BREACHED" : "SIGNAL LOST";
     ui.resultEyebrow.style.color = victory ? "#64fbd2" : "#ff6178";
-    ui.resultTitle.textContent = I18N.t(victory ? "result.victory" : "result.defeat");
+    ui.resultTitle.textContent = victory
+      ? I18N.t("result.victory")
+      : endlessReached
+        ? I18N.t("result.defeatEndlessReached", { wave: (this.endlessRound - 1) * 5 + this.wave, round: this.endlessRound })
+        : I18N.t("result.defeat");
     ui.resultSubtitle.textContent = victory ? I18N.t("result.victorySub") : (this.mode === "endless" ? I18N.t("result.defeatEndless", { n: this.endlessRound }) : I18N.t("result.defeatSub", { n: this.wave }));
     ui.resultScore.textContent = formatScore(this.score);
     ui.resultKills.textContent = String(this.kills);
@@ -3331,7 +3347,6 @@ class Game {
   refreshMenuRecords() {
     ui.menuBest.textContent = formatScore(this.highScore);
     ui.menuEndlessScore.textContent = formatScore(this.endlessHighScore);
-    ui.menuBestWave.textContent = this.bestWave > 0 ? I18N.t("hud.waveN", { n: this.bestWave }) : "—";
     ui.menuEndlessWave.textContent = this.endlessBestWave > 0 ? formatScore(this.endlessBestWave) : "—";
     ui.menuEndlessRound.textContent = this.endlessBest > 0 ? I18N.t("hud.roundN", { n: this.endlessBest }) : "—";
   }

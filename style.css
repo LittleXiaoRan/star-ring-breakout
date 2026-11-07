@@ -275,7 +275,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .map-overlay { z-index: 12; align-items: flex-start; }
 .map-panel { position: relative; width: min(100%, 960px); margin: auto; flex-shrink: 0; }
 .map-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
-.map-card { position: relative; min-height: 148px; padding: 16px; border: 1px solid rgba(130, 159, 181, 0.18); border-radius: 12px; background: rgba(17, 28, 43, 0.92); color: var(--text); text-align: left; cursor: pointer; transition: 160ms ease; }
+.map-card { position: relative; min-height: 148px; padding: 16px 16px 26px; border: 1px solid rgba(130, 159, 181, 0.18); border-radius: 12px; background: rgba(17, 28, 43, 0.92); color: var(--text); text-align: left; cursor: pointer; transition: 160ms ease; }
 .map-card:hover { transform: translateY(-3px); border-color: rgba(100, 251, 210, 0.55); }
 .map-card.selected { border-color: var(--mint); background: rgba(20, 47, 49, 0.95); box-shadow: 0 0 0 1px rgba(100, 251, 210, 0.25), 0 10px 30px rgba(0, 0, 0, 0.25); }
 .map-card .map-swatch { display: block; width: 100%; height: 5px; margin-bottom: 13px; border-radius: 4px; background: var(--swatch, var(--mint)); box-shadow: 0 0 12px color-mix(in srgb, var(--swatch, var(--mint)) 40%, transparent); }
@@ -283,6 +283,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .map-card .map-difficulty { float: right; color: var(--gold); font-size: 10px; letter-spacing: 0.1em; }
 .map-card p { margin: 8px 0 0; color: #8ba1b4; font-size: 10px; line-height: 1.65; }
 .map-card .map-badge { position: absolute; right: 12px; bottom: 10px; color: var(--mint); font-size: 8px; }
+.map-card .map-best { position: absolute; left: 12px; bottom: 10px; color: #7f96a8; font-size: 9px; letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
 .map-card.random-card { background: rgba(33, 27, 52, 0.9); }
 .map-actions { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
 .map-actions .secondary-btn { margin-top: 0; min-height: 48px; }
@@ -413,6 +414,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
   .overlay { padding: 16px; align-items: center; }
   .settings-overlay { align-items: flex-start; padding-top: clamp(18px, 9vh, 72px); }
   .panel { padding: 26px 20px; }
+  #result-title { font-size: clamp(18px, 6.2vw, 28px); text-wrap: balance; }
   .menu-panel { padding: 24px 20px 20px; }
   .map-topbar { position: static; margin-bottom: 14px; }
   .menu-record-mode { font-size: 10px; }
@@ -430,7 +432,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
   .instructions p { display: inline; margin-left: 8px; }
   .upgrade-cards { grid-template-columns: 1fr; gap: 9px; }
   .map-cards { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .map-card { min-height: 136px; padding: 12px; }
+  .map-card { min-height: 136px; padding: 12px 12px 24px; }
   .map-card .map-difficulty { float: none; display: block; margin-top: 4px; }
   .menu-map span { display: none; }
   .upgrade-panel { margin: auto; }
