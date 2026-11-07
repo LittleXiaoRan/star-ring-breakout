@@ -126,7 +126,7 @@ const ui = {
   settingsLookToggle: byId("settings-look-toggle"),
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
   settingsUnlimitedToggle: byId("settings-unlimited-toggle"),
-  settingsCustomToggle: byId("settings-custom-toggle"),
+  settingsBossArenaToggle: byId("settings-bossarena-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
   resetConfirm: byId("reset-overlay"),
@@ -783,6 +783,7 @@ class Game {
     this.obstacles = [];
     this.flow = null;
     this.flowTimer = 0;
+    this._navCache = null;
     this.powerupPoints = [];
     this.particles = [];
     this.rings = [];
@@ -851,12 +852,12 @@ class Game {
     this.endlessMapIndex = 0;
     this.runMapOverride = null;
     this.customMaps = this.loadCustomMaps();
-    this.customCfg = { classic: true, endless: true };
+    this.customCfg = { endless: true, bossArena: true };
     try {
       const cfg = JSON.parse(localStorage.getItem("star-ring-custom-cfg") || "null");
       if (cfg && typeof cfg === "object") {
-        if (typeof cfg.classic === "boolean") this.customCfg.classic = cfg.classic;
         if (typeof cfg.endless === "boolean") this.customCfg.endless = cfg.endless;
+        if (typeof cfg.bossArena === "boolean") this.customCfg.bossArena = cfg.bossArena;
       }
     } catch {}
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
@@ -889,6 +890,7 @@ class Game {
     this.updateAutoFireControl();
     this.updateUnlimitedControl();
     this.updateCustomControls();
+    this.updateBossArenaControl();
     this.updateLangControl();
     this.renderModeUI();
     this.refreshMenuRecords();
@@ -1003,10 +1005,10 @@ ui.customMapEntry.addEventListener("click", () => {
       } catch {}
       this.updateUnlimitedControl();
     });
-    ui.settingsCustomToggle.addEventListener("click", () => {
-      this.customCfg.classic = !this.customCfg.classic;
+    ui.settingsBossArenaToggle.addEventListener("click", () => {
+      this.customCfg.bossArena = !this.customCfg.bossArena;
       this.saveCustomCfg();
-      this.updateCustomControls();
+      this.updateBossArenaControl();
     });
     ui.endlessCustomToggle.addEventListener("click", () => {
       this.customCfg.endless = !this.customCfg.endless;
@@ -1180,6 +1182,9 @@ ui.customMapEntry.addEventListener("click", () => {
   onLanguageChanged() {
     this.updateSoundControl();
     this.updateAutoFireControl();
+    this.updateUnlimitedControl();
+    this.updateCustomControls();
+    this.updateBossArenaControl();
     this.updateLangControl();
     if (this.state === "playing") ui.pauseButton.textContent = I18N.t("hud.pause");
     else if (this.state === "paused") ui.pauseButton.textContent = I18N.t("hud.resume");
@@ -1487,6 +1492,171 @@ ui.customMapEntry.addEventListener("click", () => {
     return true;
   }
 
+  // --- A* Pathfinding ---
+
+  getNavGrid(radius) {
+    if (!this._navCache) this._navCache = Object.create(null);
+    const r = Math.round(radius);
+    if (this._navCache[r]) return this._navCache[r];
+    const cols = Math.ceil(this.world.width / REACH_CELL);
+    const rows = Math.ceil(this.world.height / REACH_CELL);
+    const total = cols * rows;
+    const blocked = new Uint8Array(total);
+    const rp = radius + 5;
+    const sampleOffsets = [-10, 0, 10];
+    for (let idx = 0; idx < total; idx += 1) {
+      const cx = (idx % cols) * REACH_CELL + REACH_CELL / 2;
+      const cy = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
+      if (cx > this.world.width || cy > this.world.height) { blocked[idx] = 1; continue; }
+      let cellBlocked = false;
+      sampleLoop: for (let sx = 0; sx < 3; sx += 1) {
+        for (let sy = 0; sy < 3; sy += 1) {
+          const x = cx + sampleOffsets[sx];
+          const y = cy + sampleOffsets[sy];
+          for (let oi = 0; oi < this.obstacles.length; oi += 1) {
+            if (distanceToRect(x, y, this.obstacles[oi]) < rp) { cellBlocked = true; break sampleLoop; }
+          }
+        }
+      }
+      if (cellBlocked) blocked[idx] = 1;
+    }
+    const grid = { cols, rows, blocked };
+    this._navCache[r] = grid;
+    return grid;
+  }
+
+  planEnemyPath(enemy) {
+    const grid = this.getNavGrid(enemy.radius);
+    const sc = clamp(Math.floor(enemy.x / REACH_CELL), 0, grid.cols - 1);
+    const sr = clamp(Math.floor(enemy.y / REACH_CELL), 0, grid.rows - 1);
+    const gc = clamp(Math.floor(this.player.x / REACH_CELL), 0, grid.cols - 1);
+    const gr = clamp(Math.floor(this.player.y / REACH_CELL), 0, grid.rows - 1);
+    const startIdx = sr * grid.cols + sc;
+    const goalIdx = gr * grid.cols + gc;
+    if (grid.blocked[goalIdx] || grid.blocked[startIdx]) return null;
+    if (startIdx === goalIdx) return null;
+    const size = grid.cols * grid.rows;
+    const gScore = new Float32Array(size).fill(Infinity);
+    const cameFrom = new Int32Array(size).fill(-1);
+    const closed = new Uint8Array(size);
+    gScore[startIdx] = 0;
+    const h = (c, r) => (Math.abs(c - gc) + Math.abs(r - gr)) * REACH_CELL;
+    const open = [{ idx: startIdx, f: h(sc, sr) }];
+    while (open.length) {
+      let best = 0;
+      for (let i = 1; i < open.length; i++) { if (open[i].f < open[best].f) best = i; }
+      const node = open[best];
+      if (open.length > 1) { open[best] = open[open.length - 1]; open.pop(); } else { open.pop(); }
+      const cidx = node.idx;
+      if (closed[cidx]) continue;
+      if (cidx === goalIdx) {
+        const path = [];
+        for (let ci = goalIdx; ci !== -1; ci = cameFrom[ci]) {
+          const c = ci % grid.cols;
+          const r = (ci / grid.cols) | 0;
+          path.push({ x: c * REACH_CELL + REACH_CELL / 2, y: r * REACH_CELL + REACH_CELL / 2 });
+        }
+        path.reverse();
+        return this.smoothPath(path, enemy.radius);
+      }
+      closed[cidx] = 1;
+      const cc = cidx % grid.cols;
+      const cr = (cidx / grid.cols) | 0;
+      const nextG = gScore[cidx] + REACH_CELL;
+      for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nc = cc + dc;
+        const nr = cr + dr;
+        if (nc < 0 || nc >= grid.cols || nr < 0 || nr >= grid.rows) continue;
+        const nidx = nr * grid.cols + nc;
+        if (grid.blocked[nidx] || closed[nidx]) continue;
+        if (nextG >= gScore[nidx]) continue;
+        gScore[nidx] = nextG;
+        cameFrom[nidx] = cidx;
+        open.push({ idx: nidx, f: nextG + h(nc, nr) });
+      }
+    }
+    return null;
+  }
+
+  smoothPath(path, radius) {
+    if (path.length <= 2) return path;
+    const rp = radius + 5;
+    const result = [path[0]];
+    let anchor = 0;
+    for (let i = 1; i < path.length - 1; i += 1) {
+      const from = path[anchor];
+      const to = path[i + 1];
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 15));
+      let blocked = false;
+      for (let s = 1; s <= steps; s += 1) {
+        const px = from.x + dx * s / steps;
+        const py = from.y + dy * s / steps;
+        for (let oi = 0; oi < this.obstacles.length; oi += 1) {
+          if (distanceToRect(px, py, this.obstacles[oi]) < rp) { blocked = true; break; }
+        }
+        if (blocked) break;
+      }
+      if (blocked) { result.push(path[i]); anchor = i; }
+    }
+    result.push(path[path.length - 1]);
+    return result;
+  }
+
+  steerToPoint(enemy, tx, ty, dt) {
+    const tdx = tx - enemy.x;
+    const tdy = ty - enemy.y;
+    const tdist = Math.max(0.001, Math.hypot(tdx, tdy));
+    const baseX = tdx / tdist;
+    const baseY = tdy / tdist;
+    const baseAngle = Math.atan2(baseY, baseX);
+    const lookahead = Math.min(96, 52 + enemy.speed * 0.22);
+    const clearance = enemy.radius + 5;
+    let bestAngle = baseAngle;
+    let bestScore = Infinity;
+    for (const offset of [0, 0.28, -0.28, 0.55, -0.55, 0.82, -0.82]) {
+      const angle = baseAngle + offset;
+      const ca = Math.cos(angle);
+      const sa = Math.sin(angle);
+      let worstClear = Infinity;
+      for (let step = 1; step <= 3; step += 1) {
+        const px = enemy.x + ca * lookahead * step / 3;
+        const py = enemy.y + sa * lookahead * step / 3;
+        for (const obs of this.obstacles) {
+          const d = distanceToRect(px, py, obs) - clearance;
+          if (d < worstClear) worstClear = d;
+        }
+      }
+      const angleCost = Math.abs(offset) / Math.PI * 0.5;
+      const collisionPenalty = worstClear < 0 ? 2.5 + (-worstClear) * 0.06 : 0;
+      const marginCost = worstClear >= 0 ? Math.max(0, 1 - worstClear / 12) * 0.15 : 0;
+      const score = angleCost + collisionPenalty + marginCost;
+      if (score < bestScore) { bestScore = score; bestAngle = angle; }
+    }
+    return { nx: Math.cos(bestAngle), ny: Math.sin(bestAngle) };
+  }
+
+  getEnemyMoveTarget(enemy, dt) {
+    if (this.map.id === "gravity") return this.getEnemyPursuitTarget(enemy, dt);
+    if (this.obstacles.length === 0 || this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, enemy.radius + 14)) {
+      enemy._navPath = null;
+      return this.player;
+    }
+    if (!enemy._navPath || enemy._navTimer <= 0) {
+      enemy._navPath = this.planEnemyPath(enemy);
+      enemy._navIdx = enemy._navPath && enemy._navPath.length > 1 ? 1 : 0;
+      enemy._navTimer = 0.35;
+    }
+    enemy._navTimer -= dt;
+    if (enemy._navPath && enemy._navIdx < enemy._navPath.length) {
+      const wp = enemy._navPath[enemy._navIdx];
+      if ((wp.x - enemy.x) ** 2 + (wp.y - enemy.y) ** 2 < 576) enemy._navIdx += 1;
+      if (enemy._navIdx < enemy._navPath.length) return enemy._navPath[enemy._navIdx];
+    }
+    return this.player;
+  }
+
   steerAroundObstacles(enemy, nx, ny, dt) {
     if (this.obstacles.length === 0 && this.orbiters.length === 0) return { nx, ny };
     let baseAngle;
@@ -1769,6 +1939,7 @@ ui.customMapEntry.addEventListener("click", () => {
     this.customUnplayable = false;
     this.flow = null;
     this.flowTimer = 0;
+    this._navCache = null;
     this.safePlatforms = [];
     this.orbiters = [];
     this.wells = [];
@@ -2275,18 +2446,25 @@ ui.customMapEntry.addEventListener("click", () => {
   }
 
   updateCustomControls() {
-    ui.settingsCustomToggle.setAttribute("aria-checked", String(this.customCfg.classic));
-    ui.settingsCustomToggle.querySelector("span").textContent = this.customCfg.classic ? I18N.t("hud.on") : I18N.t("hud.off");
     ui.endlessCustomToggle.setAttribute("aria-checked", String(this.customCfg.endless));
     ui.endlessCustomToggle.querySelector("span").textContent = this.customCfg.endless ? I18N.t("hud.on") : I18N.t("hud.off");
+  }
+
+  updateBossArenaControl() {
+    ui.settingsBossArenaToggle.setAttribute("aria-checked", String(this.customCfg.bossArena));
+    ui.settingsBossArenaToggle.querySelector("span").textContent = this.customCfg.bossArena ? I18N.t("hud.on") : I18N.t("hud.off");
   }
 
   startCustomRun(mapId) {
     const map = this.getMap(mapId);
     if (!map) return false;
-    const allowed = this.mode === "endless" ? this.customCfg.endless : this.customCfg.classic;
+    const allowed = this.mode === "endless" ? this.customCfg.endless : true;
     if (!allowed) return "disabled";
     this.runMapOverride = map.id;
+    if (this.mode === "endless") {
+      this._endlessMapTypeSaved = this.endless.map;
+      this.endless.map = "fixed";
+    }
     this.start();
     return true;
   }
@@ -2549,6 +2727,7 @@ ui.customMapEntry.addEventListener("click", () => {
 
   goToMenu() {
     if (["playing", "paused"].includes(this.state) && this.player) this.recordBest(false);
+    if (this._endlessMapTypeSaved != null) { this.endless.map = this._endlessMapTypeSaved; this._endlessMapTypeSaved = null; }
     this.state = "menu";
     this.audio.stopLaserPrep();
     this.input.reset();
@@ -2591,7 +2770,7 @@ ui.customMapEntry.addEventListener("click", () => {
     this.spawnTimer = 0.75;
     this.prismTimer = random(8, 20);
     this.intermission = 0;
-    if (number === 5 && !this.isEndlessPlainFinal()) {
+    if (number === 5 && !this.isEndlessPlainFinal() && this.customCfg.bossArena) {
       this.enterBossArena();
       this.spawnEnemy("boss");
       this.spawnRemaining -= 1;
@@ -2973,14 +3152,15 @@ ui.customMapEntry.addEventListener("click", () => {
         const dx = player.x - enemy.x;
         const dy = player.y - enemy.y;
         const distance = Math.max(0.001, Math.hypot(dx, dy));
-        const target = this.getEnemyPursuitTarget(enemy, dt);
+        const target = this.getEnemyMoveTarget(enemy, dt);
+        const usePathSteer = target !== this.player;
         const targetDx = target.x - enemy.x;
         const targetDy = target.y - enemy.y;
         const targetDistance = Math.max(0.001, Math.hypot(targetDx, targetDy));
         const nx = targetDx / targetDistance;
         const ny = targetDy / targetDistance;
         if (enemy.type === "chaser" || enemy.type === "splitter" || enemy.type === "mite") {
-          const steer = this.steerAroundObstacles(enemy, nx, ny, dt);
+          const steer = usePathSteer ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, nx, ny, dt);
           const wobble = enemy.type === "splitter" && this.map.id !== "gravity" ? Math.sin(this.runTime * 2 + enemy.id) * 0.35 : 0;
           enemy.x += (steer.nx - steer.ny * wobble) * enemy.speed * dt * slowFactor;
           enemy.y += (steer.ny + steer.nx * wobble) * enemy.speed * dt * slowFactor;
@@ -2990,20 +3170,20 @@ ui.customMapEntry.addEventListener("click", () => {
           else if (distance < 175) direction = -1;
           const baseX = direction === 1 ? nx : dx / distance;
           const baseY = direction === 1 ? ny : dy / distance;
-          const steer = direction === 0 ? { nx: 0, ny: 0 } : this.steerAroundObstacles(enemy, baseX, baseY, dt);
+          const steer = direction === 0 ? { nx: 0, ny: 0 } : (usePathSteer ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, baseX, baseY, dt));
           const sx = steer.nx;
           const sy = steer.ny;
           const strafe = this.map.id === "gravity" && direction === 1 ? 0 : Math.sin(this.runTime * 1.4 + enemy.id) * 0.6;
           enemy.x += (sx * direction - sy * strafe) * enemy.speed * dt * slowFactor;
           enemy.y += (sy * direction + sx * strafe) * enemy.speed * dt * slowFactor;
           enemy.attackTimer -= dt;
-          if (enemy.attackTimer <= 0 && distance < 580) {
+          if (enemy.attackTimer <= 0 && distance < 580 && this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, 10)) {
             this.fireEnemyBullet(enemy, Math.atan2(dy, dx), 205, 5, enemy.damage);
             enemy.attackTimer = random(1.65, 2.2);
           }
         } else if (enemy.type === "dasher") {
           if (enemy.state === "hunt") {
-            const steer = this.steerAroundObstacles(enemy, nx, ny, dt);
+            const steer = usePathSteer ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, nx, ny, dt);
             enemy.x += steer.nx * enemy.speed * dt * slowFactor;
             enemy.y += steer.ny * enemy.speed * dt * slowFactor;
             enemy.cooldown -= dt;
@@ -3746,6 +3926,7 @@ enemy.laserAngle = angle + random(-8, 8) * Math.PI / 180;
 
   finish(victory) {
     if (["gameover", "victory", "menu"].includes(this.state)) return;
+    if (this._endlessMapTypeSaved != null) { this.endless.map = this._endlessMapTypeSaved; this._endlessMapTypeSaved = null; }
     this.state = victory ? "victory" : "gameover";
     this.audio.stopLaserPrep();
     this.input.reset();

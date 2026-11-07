@@ -422,6 +422,30 @@
       return false;
     }
 
+    checkBossSpace() {
+      const obstacles = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
+      const cols = Math.ceil(WORLD_WIDTH / REACH_CELL);
+      const rows = Math.ceil(WORLD_HEIGHT / REACH_CELL);
+      const total = cols * rows;
+      const MIN_BOSS_CLEARANCE = 60;
+      const sampleOffsets = [-10, 0, 10];
+      for (let idx = 0; idx < total; idx += 1) {
+        const cx = (idx % cols) * REACH_CELL + REACH_CELL / 2;
+        const cy = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
+        if (cx > WORLD_WIDTH || cy > WORLD_HEIGHT) continue;
+        let clear = true;
+        sampleLoop: for (let sx = 0; sx < 3; sx += 1) {
+          for (let sy = 0; sy < 3; sy += 1) {
+            const x = cx + sampleOffsets[sx];
+            const y = cy + sampleOffsets[sy];
+            if (obstacles.some((obstacle) => distToRect(x, y, obstacle) < MIN_BOSS_CLEARANCE)) { clear = false; break sampleLoop; }
+          }
+        }
+        if (clear) return true;
+      }
+      return false;
+    }
+
     async saveFlow(fromButton) {
       if (!this.blocks.length) {
         toast(I18N.t("custom.needBlocks"), "#ff9dab");
@@ -429,6 +453,10 @@
       }
       if (!this.checkPlayable()) {
         toast(I18N.t("custom.noSpawn"), "#ff9dab");
+        return false;
+      }
+      if (!this.checkBossSpace()) {
+        toast(I18N.t("custom.noBoss"), "#ff9dab");
         return false;
       }
       const choice = await this.showDialog({
