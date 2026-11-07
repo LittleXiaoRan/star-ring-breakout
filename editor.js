@@ -264,6 +264,7 @@
       this.future = [];
       this.dirty = false;
       this.customSelectedId = null;
+      this.detailMapId = null;
       this.editingMapId = null;
       this.editorFromSelect = false;
       this.ctrlHeld = false;
@@ -398,6 +399,7 @@
     openSelect() {
       game.reloadCustomMaps();
       game.renderModeUI();
+      this.detailMapId = this.customSelectedId;
       this.renderCards();
       this.selectOpen = true;
       els.selectOverlay.hidden = false;
@@ -414,18 +416,35 @@
       if (!maps.some((map) => map.id === this.customSelectedId)) {
         this.customSelectedId = maps.length ? maps[0].id : null;
       }
+      if (this.detailMapId !== "random" && !maps.some((map) => map.id === this.detailMapId)) {
+        this.detailMapId = this.customSelectedId;
+      }
       els.cards.replaceChildren();
       els.empty.hidden = maps.length > 0;
       for (const map of maps) {
         const card = document.createElement("div");
-        card.className = `map-card custom-map-card${map.id === this.customSelectedId ? " selected" : ""}`;
+        card.className = `map-card custom-map-card${map.id === this.customSelectedId ? " selected" : ""}${map.id === this.detailMapId ? " detail" : ""}`;
         card.style.setProperty("--swatch", "#ad8cff");
         card.setAttribute("role", "button");
         card.setAttribute("aria-pressed", String(map.id === this.customSelectedId));
         card.tabIndex = 0;
-        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="share">${I18N.t("customSelect.share")}</button><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
-        card.querySelector("strong").textContent = map.name;
-        card.querySelector("p").textContent = map.desc || I18N.t("customSelect.blocks", { n: map.blocks.length });
+        card.innerHTML = `<span class="card-face"><span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="share">${I18N.t("customSelect.share")}</button><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span></span>`;
+        card.querySelector(".card-face strong").textContent = map.name;
+        card.querySelector(".card-face p").textContent = map.desc || I18N.t("customSelect.blocks", { n: map.blocks.length });
+        const detail = document.createElement("span");
+        detail.className = "card-detail";
+        detail.innerHTML = `<span class="detail-left"><strong class="detail-title"></strong><span class="detail-actions"><button type="button" class="card-btn" data-act="share">${I18N.t("customSelect.share")}</button><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span></span>`;
+        detail.querySelector(".detail-title").textContent = map.name;
+        const canvas = document.createElement("canvas");
+        canvas.className = "detail-preview";
+        canvas.width = 192;
+        canvas.height = 128;
+        window.mapPreview.drawCustom(canvas, map.blocks);
+        const previewBox = document.createElement("span");
+        previewBox.className = "detail-right";
+        previewBox.appendChild(canvas);
+        detail.appendChild(previewBox);
+        card.appendChild(detail);
         card.addEventListener("click", (event) => {
           const action = event.target.closest("[data-act]");
           if (action) {
@@ -448,11 +467,24 @@
       }
       if (maps.length) {
         const randomCard = document.createElement("div");
-        randomCard.className = "map-card custom-map-card random-card";
+        randomCard.className = `map-card custom-map-card random-card${this.detailMapId === "random" ? " detail" : ""}`;
         randomCard.style.setProperty("--swatch", "#ad8cff");
         randomCard.setAttribute("role", "button");
         randomCard.tabIndex = 0;
-        randomCard.innerHTML = `<span class="map-swatch"></span><strong>${I18N.t("map.random.name")}</strong><p>${I18N.t("map.random.desc")}</p>`;
+        randomCard.innerHTML = `<span class="card-face"><span class="map-swatch"></span><strong>${I18N.t("map.random.name")}</strong><p>${I18N.t("map.random.desc")}</p></span>`;
+        const randomDetail = document.createElement("span");
+        randomDetail.className = "card-detail";
+        randomDetail.innerHTML = `<span class="detail-left"><strong class="detail-title">${I18N.t("map.random.name")}</strong><p>${I18N.t("map.random.desc")}</p></span>`;
+        const randomCanvas = document.createElement("canvas");
+        randomCanvas.className = "detail-preview";
+        randomCanvas.width = 192;
+        randomCanvas.height = 128;
+        window.mapPreview.drawRandom(randomCanvas);
+        const randomPreviewBox = document.createElement("span");
+        randomPreviewBox.className = "detail-right";
+        randomPreviewBox.appendChild(randomCanvas);
+        randomDetail.appendChild(randomPreviewBox);
+        randomCard.appendChild(randomDetail);
         randomCard.addEventListener("click", () => this.selectCustomRandom());
         randomCard.addEventListener("keydown", (event) => {
           if (event.code === "Enter" || event.code === "Space") {
@@ -469,6 +501,7 @@
       const maps = game.customMaps;
       if (!maps.length) return;
       this.customSelectedId = maps[Math.floor(Math.random() * maps.length)].id;
+      this.detailMapId = this.customSelectedId;
       game.audio.tone(480, 0.08, "sine", 0.018, 720);
       this.renderCards();
     }
@@ -476,6 +509,7 @@
     selectCustom(id) {
       if (!game.customMaps.some((map) => map.id === id)) return;
       this.customSelectedId = id;
+      this.detailMapId = id;
       game.audio.tone(480, 0.08, "sine", 0.018, 720);
       this.renderCards();
     }
@@ -1444,6 +1478,152 @@
       context.stroke();
     }
   }
+
+  window.mapPreview = {
+    prepare(canvas) {
+      const context = canvas.getContext("2d");
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "#0d0a1a";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      return context;
+    },
+    drawCustom(canvas, blocks) {
+      const context = this.prepare(canvas);
+      const scale = Math.min(canvas.width / WORLD_WIDTH, canvas.height / WORLD_HEIGHT);
+      const ox = (canvas.width - WORLD_WIDTH * scale) / 2;
+      const oy = (canvas.height - WORLD_HEIGHT * scale) / 2;
+      for (const block of blocks) {
+        context.save();
+        context.translate(ox + (block.x + block.width / 2) * scale, oy + (block.y + block.height / 2) * scale);
+        context.rotate((block.rot || 0) * Math.PI / 180);
+        const bw = block.width * scale;
+        const bh = Math.max(2, block.height * scale);
+        context.fillStyle = "#ad8cff";
+        context.fillRect(-bw / 2, -bh / 2, bw, bh);
+        context.restore();
+      }
+    },
+    drawBuiltin(canvas, id) {
+      const context = this.prepare(canvas);
+      const w = canvas.width;
+      const h = canvas.height;
+      const cx = w / 2;
+      const cy = h / 2;
+      const ring = (x, y, r) => {
+        context.beginPath();
+        context.arc(x, y, r, 0, Math.PI * 2);
+      };
+      if (id === "harbor") {
+        context.fillStyle = "#8ba1b4";
+        context.globalAlpha = 0.75;
+        [[34, 28, 34, 14], [124, 28, 34, 14], [34, 86, 34, 14], [124, 86, 34, 14]].forEach(([x, y, bw, bh]) => context.fillRect(x, y, bw, bh));
+      } else if (id === "dock") {
+        context.strokeStyle = "#64fbd2";
+        [16, 30, 44].forEach((r) => {
+          context.globalAlpha = 0.9 - r * 0.013;
+          ring(cx, cy, r);
+          context.stroke();
+        });
+        context.globalAlpha = 1;
+        context.fillStyle = "#64fbd2";
+        ring(cx, cy, 4);
+        context.fill();
+        context.fillStyle = "#ffd166";
+        ring(cx + 34, cy - 18, 3.5);
+        context.fill();
+      } else if (id === "furnace") {
+        context.fillStyle = "#ffd166";
+        context.globalAlpha = 0.28;
+        context.fillRect(cx - 14, cy - 14, 28, 28);
+        context.globalAlpha = 0.9;
+        context.strokeStyle = "#ffd166";
+        context.strokeRect(cx - 14, cy - 14, 28, 28);
+        context.fillStyle = "#ff6178";
+        ring(cx, cy - 40, 5);
+        context.fill();
+        context.strokeStyle = "#ff6178";
+        context.globalAlpha = 0.55;
+        for (let i = 1; i < 6; i += 1) {
+          const a = (Math.PI / 3) * i + Math.PI / 6;
+          ring(cx + Math.cos(a) * 40, cy + Math.sin(a) * 40, 5);
+          context.stroke();
+        }
+      } else if (id === "gravity") {
+        context.strokeStyle = "#ad8cff";
+        context.globalAlpha = 0.9;
+        [[cx - 44, cy - 20], [cx + 44, cy - 20], [cx - 44, cy + 20], [cx + 44, cy + 20]].forEach(([x, y]) => {
+          ring(x, y, 9);
+          context.stroke();
+          context.beginPath();
+          context.arc(x, y, 4.5, 0.4, Math.PI * 1.7);
+          context.stroke();
+        });
+        context.fillStyle = "#ffd166";
+        ring(cx - 30, cy - 28, 3);
+        context.fill();
+        ring(cx + 30, cy + 28, 3);
+        context.fill();
+      } else if (id === "storm") {
+        context.strokeStyle = "#8ba1b4";
+        context.globalAlpha = 0.4;
+        [24, 42, 60, 78, 104].forEach((y) => {
+          context.beginPath();
+          context.moveTo(8, y);
+          context.lineTo(w - 8, y);
+          context.stroke();
+        });
+        context.fillStyle = "#64fbd2";
+        context.globalAlpha = 0.3;
+        context.fillRect(cx - 12, 6, 24, h - 12);
+        context.globalAlpha = 0.8;
+        context.strokeStyle = "#64fbd2";
+        context.strokeRect(cx - 12, 6, 24, h - 12);
+      } else if (id === "matrix") {
+        context.strokeStyle = "#ad8cff";
+        context.globalAlpha = 0.3;
+        for (let x = 16; x < w; x += 24) {
+          context.beginPath();
+          context.moveTo(x, 8);
+          context.lineTo(x, h - 8);
+          context.stroke();
+        }
+        for (let y = 16; y < h; y += 24) {
+          context.beginPath();
+          context.moveTo(8, y);
+          context.lineTo(w - 8, y);
+          context.stroke();
+        }
+        context.fillStyle = "#64fbd2";
+        context.globalAlpha = 0.45;
+        context.fillRect(8, 40, w - 16, 14);
+        context.fillRect(88, 8, 14, h - 16);
+        context.fillStyle = "#ffd166";
+        context.globalAlpha = 0.9;
+        context.fillRect(94, 46, 3, 3);
+      } else if (id === "core") {
+        context.fillStyle = "#64fbd2";
+        context.globalAlpha = 0.12;
+        ring(cx, cy, 34);
+        context.fill();
+        context.globalAlpha = 0.9;
+        context.strokeStyle = "#64fbd2";
+        ring(cx, cy, 34);
+        context.stroke();
+        context.fillStyle = "#64fbd2";
+        ring(cx, cy, 10);
+        context.fill();
+      }
+      context.globalAlpha = 1;
+    },
+    drawRandom(canvas) {
+      const context = this.prepare(canvas);
+      context.fillStyle = "#ad8cff";
+      context.font = "700 46px 'Rajdhani', 'Segoe UI', sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText("?", canvas.width / 2, canvas.height / 2 + 4);
+    }
+  };
 
   window.mapEditor = new MapEditor();
 })();

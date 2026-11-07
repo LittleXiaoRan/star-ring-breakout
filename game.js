@@ -853,6 +853,7 @@ class Game {
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
     this.inBossArena = false;
     this.mapSelectOpen = false;
+    this.mapDetailId = null;
     this.nextId = 1;
     this.width = 1;
     this.height = 1;
@@ -2713,6 +2714,7 @@ ui.customMapEntry.addEventListener("click", () => {
     if (!["menu", "paused"].includes(this.state) || this.mapSelectOpen) return;
     this.mapSelectionId = this.selectedMapId;
     this.mapSelectOpen = true;
+    this.mapDetailId = this.mapSelectionId;
     this.renderModeUI();
     this.renderMapCards();
     ui.mapOverlay.hidden = false;
@@ -2727,6 +2729,7 @@ ui.customMapEntry.addEventListener("click", () => {
     if (id === "random") id = MAP_DEFS[Math.floor(Math.random() * MAP_DEFS.length)].id;
     if (!MAP_DEFS.some((map) => map.id === id)) return;
     this.mapSelectionId = id;
+    this.mapDetailId = this.mapSelectionId;
     if (this.state === "menu") {
       this.selectedMapId = id;
       this.map = MAP_DEFS.find((map) => map.id === id);
@@ -2742,11 +2745,12 @@ ui.customMapEntry.addEventListener("click", () => {
   renderMapCards() {
     ui.mapCards.replaceChildren();
     const selectedId = this.mapSelectOpen ? this.mapSelectionId : this.selectedMapId;
+    const detailId = this.mapSelectOpen ? this.mapDetailId : null;
     const entries = [...MAP_DEFS, { id: "random", nameKey: "map.random.name", descKey: "map.random.desc", difficulty: 0, swatch: "#ad8cff" }];
     for (const map of entries) {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `map-card${map.id === selectedId ? " selected" : ""}${map.id === "random" ? " random-card" : ""}`;
+      button.className = `map-card${map.id === selectedId ? " selected" : ""}${map.id === "random" ? " random-card" : ""}${map.id === detailId ? " detail" : ""}`;
       button.dataset.map = map.id;
       button.setAttribute("aria-pressed", String(map.id === selectedId));
       button.style.setProperty("--swatch", map.swatch);
@@ -2755,7 +2759,23 @@ ui.customMapEntry.addEventListener("click", () => {
       const badge = classic && this.badges.includes(map.id) ? `<span class="map-badge">${I18N.t("map.cleared")}</span>` : "";
       const best = classic && map.id !== "random" ? Number(this.mapBestScores[map.id]) || 0 : null;
       const bestLabel = best === null ? "" : `<span class="map-best">${I18N.t("map.best", { score: best > 0 ? formatScore(best) : "—" })}</span>`;
-      button.innerHTML = `<span class="map-swatch"></span><span class="map-difficulty">${difficulty}</span><strong>${I18N.t(map.nameKey)}</strong><p>${I18N.t(map.descKey)}</p>${badge}${bestLabel}`;
+      button.innerHTML = `<span class="card-face"><span class="map-swatch"></span><span class="map-difficulty">${difficulty}</span><strong>${I18N.t(map.nameKey)}</strong><p>${I18N.t(map.descKey)}</p>${badge}${bestLabel}</span>`;
+      const detail = document.createElement("span");
+      detail.className = "card-detail";
+      detail.innerHTML = `<span class="detail-left"><strong class="detail-title">${I18N.t(map.nameKey)}</strong><span class="detail-meta-row"><span class="map-difficulty">${difficulty}</span>${badge}</span><p>${I18N.t(map.descKey)}</p>${bestLabel}</span>`;
+      const canvas = document.createElement("canvas");
+      canvas.className = "detail-preview";
+      canvas.width = 192;
+      canvas.height = 128;
+      if (window.mapPreview) {
+        if (map.id === "random") window.mapPreview.drawRandom(canvas);
+        else window.mapPreview.drawBuiltin(canvas, map.id);
+      }
+      const previewBox = document.createElement("span");
+      previewBox.className = "detail-right";
+      previewBox.appendChild(canvas);
+      detail.appendChild(previewBox);
+      button.appendChild(detail);
       button.addEventListener("click", () => this.selectMap(map.id));
       ui.mapCards.appendChild(button);
     }
