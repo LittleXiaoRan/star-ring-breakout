@@ -1983,7 +1983,7 @@ class Game {
     this.endlessRound += 1;
     this.endlessHpMul *= 1 + this.endless.scale / 100;
     this.endlessDmgMul *= 1 + (this.endless.scale / 100) * 0.7;
-    this.endlessSpdMul *= 1 + this.endlessSpeedBonus() / 100;
+    this.endlessSpdMul = Math.min(2.4, this.endlessSpdMul * (1 + this.endlessSpeedBonus() / 100));
     this.audio.stopLaserPrep();
     const player = this.player;
     player.hp = Math.min(player.maxHp, player.hp + 40);
@@ -2702,7 +2702,8 @@ class Game {
             enemy.y += player.vy / length * 24;
             this.shake = Math.max(this.shake, 6);
           }
-        } else if (this.hurtPlayer(enemy.damage)) {
+        } else {
+          this.hurtPlayer(enemy.damage);
           const angle = Math.atan2(enemy.y - player.y, enemy.x - player.x);
           enemy.x += Math.cos(angle) * 20;
           enemy.y += Math.sin(angle) * 20;
@@ -2774,7 +2775,7 @@ class Game {
     if (enemy.dead || enemy.spawnIn > 0) return;
     if (enemy.laserCooldown > 0) return;
     enemy.laserCooldown = 1.2;
-    enemy.laserAngle = angle;
+    enemy.laserAngle = angle + random(-15, 15) * Math.PI / 180;
     this.firePrismLaser(enemy);
   }
 
@@ -2992,7 +2993,8 @@ class Game {
       this.audio.explode(0.55);
       this.audio.tone(330, 0.5, "sine", 0.035, 880);
       const spread = enemy.radius * 1.35;
-      for (let i = 0; i < 50; i += 1) {
+      const bossXp = Math.round(this.xpNext * 0.4);
+      for (let i = 0; i < bossXp; i += 1) {
         const angle = random(0, Math.PI * 2);
         const dist = Math.random() * spread;
         this.pickups.push({
@@ -3182,7 +3184,7 @@ class Game {
     if (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level += 1;
-      this.xpNext = Math.round(this.xpNext * 1.3 + 2);
+      this.xpNext = Math.min(500, Math.round(this.xpNext * 1.3 + 2));
       this.pendingUpgrades += 1;
       if (this.state === "playing") this.showUpgrade();
     }
