@@ -740,42 +740,34 @@
         toast(I18N.t("custom.noBoss"), "#ff9dab");
         return false;
       }
-      const existing = this.editingMapId ? loadMaps().find((entry) => entry.id === this.editingMapId) : null;
-      const choice = await this.showDialog({
-        eyebrow: "CUSTOM SECTOR",
-        title: I18N.t("custom.nameTitle"),
-        input: { value: existing ? existing.name : this.suggestName(), placeholder: I18N.t("custom.namePlaceholder") },
-        input2: { value: existing && typeof existing.desc === "string" ? existing.desc : "", placeholder: I18N.t("custom.descPlaceholder") },
-        buttons: [
-          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
-          { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
-        ]
-      });
-      if (choice !== "save") return false;
-      const name = els.dialogInput.value.trim();
-      if (!name) return false;
-      const blocks = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
       const maps = loadMaps();
+      const existing = this.editingMapId ? maps.find((entry) => entry.id === this.editingMapId) : null;
+      const blocks = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
       if (existing) {
-        existing.name = uniqueName(name, existing.id);
-        existing.desc = els.descInput.value.trim();
         existing.blocks = blocks;
       } else {
-        maps.push({
-          id: newMapId(),
-          name: uniqueName(name),
-          desc: els.descInput.value.trim(),
-          blocks
+        const choice = await this.showDialog({
+          eyebrow: "CUSTOM SECTOR",
+          title: I18N.t("custom.nameTitle"),
+          input: { value: this.suggestName(), placeholder: I18N.t("custom.namePlaceholder") },
+          input2: { placeholder: I18N.t("custom.descPlaceholder") },
+          buttons: [
+            { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+            { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
+          ]
         });
+        if (choice !== "save") return false;
+        const name = els.dialogInput.value.trim();
+        if (!name) return false;
+        const desc = els.descInput.value.trim();
+        const id = newMapId();
+        maps.push({ id, name: uniqueName(name), desc, blocks });
+        this.editingMapId = id;
       }
       saveMaps(maps);
       game.reloadCustomMaps();
       this.dirty = false;
-      if (fromButton) {
-        toast(I18N.t("custom.saved"));
-        this.closeEditor();
-        this.openSelect();
-      }
+      if (fromButton) toast(I18N.t("custom.saved"));
       return true;
     }
 
