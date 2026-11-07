@@ -116,12 +116,16 @@ const ui = {
   pauseButton: byId("pause-btn"),
   settingsButton: byId("settings-btn"),
   settings: byId("settings-overlay"),
+  settingsTitle: byId("settings-title"),
   settingsSoundToggle: byId("settings-sound-toggle"),
   settingsLookToggle: byId("settings-look-toggle"),
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
   settingsUnlimitedToggle: byId("settings-unlimited-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
+  resetConfirm: byId("reset-overlay"),
+  resetCancelButton: byId("reset-cancel-btn"),
+  resetConfirmButton: byId("reset-confirm-btn"),
   bgUploadButton: byId("bg-upload-btn"),
   bgClearButton: byId("bg-clear-btn"),
   bgFileInput: byId("bg-file-input"),
@@ -671,6 +675,8 @@ class Game {
     this.canvas = ui.canvas;
     this.context = this.canvas.getContext("2d");
     this.state = "menu";
+    this.resetClickCount = 0;
+    this.lastResetClick = 0;
     this.player = null;
     this.world = { width: WORLD_WIDTH, height: WORLD_HEIGHT };
     this.camera = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2 };
@@ -892,6 +898,12 @@ class Game {
     ui.settings.addEventListener("click", (event) => {
       if (event.target === ui.settings) this.closeSettings();
     });
+    ui.settingsTitle.addEventListener("click", () => this.handleSettingsTitleClick());
+    ui.resetCancelButton.addEventListener("click", () => this.closeResetConfirm());
+    ui.resetConfirmButton.addEventListener("click", () => this.resetGameData());
+    ui.resetConfirm.addEventListener("click", (event) => {
+      if (event.target === ui.resetConfirm) this.closeResetConfirm();
+    });
     ui.helpButton.addEventListener("click", () => this.openHelp());
     ui.helpCloseButton.addEventListener("click", () => this.closeHelp());
     ui.helpBackButton.addEventListener("click", () => this.closeHelp());
@@ -1051,9 +1063,52 @@ class Game {
     this.updateHUD();
   }
 
+  handleSettingsTitleClick() {
+    const now = performance.now();
+    if (now - this.lastResetClick > 1500) this.resetClickCount = 0;
+    this.lastResetClick = now;
+    this.resetClickCount += 1;
+    if (this.resetClickCount < 10) return;
+    this.resetClickCount = 0;
+    ui.resetConfirm.hidden = false;
+  }
+
+  closeResetConfirm() {
+    ui.resetConfirm.hidden = true;
+  }
+
+  resetGameData() {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("star-ring-"))
+        .forEach((key) => localStorage.removeItem(key));
+    } catch {}
+    const reload = () => location.reload();
+    if (!window.indexedDB) {
+      reload();
+      return;
+    }
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      reload();
+    };
+    try {
+      const request = indexedDB.deleteDatabase("star-ring-custom-files");
+      request.onsuccess = finish;
+      request.onerror = finish;
+      request.onblocked = finish;
+      window.setTimeout(finish, 800);
+    } catch {
+      finish();
+    }
+  }
+
   openSettings() {
     if (!ui.settings.hidden || !ui.help.hidden) return;
     this.settingsReturnState = this.state;
+    this.resetClickCount = 0;
     if (this.state === "playing") this.pause();
     ui.pause.hidden = true;
     ui.settings.hidden = false;
