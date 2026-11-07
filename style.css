@@ -166,7 +166,8 @@ body.game-active:not(.touch-mode) #game-canvas { cursor: none; }
 .buff-bar [data-buff="engine"] { color: #65a9ff; }
 .buff-bar [data-buff="magnet"] { color: #ad8cff; }
 .buff-bar [data-buff="slow"] { color: #ff7eb6; }
-.powerup-toast { position: absolute; left: 50%; bottom: 25px; transform: translateX(-50%); padding: 8px 14px; border: 1px solid rgba(100, 251, 210, 0.3); border-radius: 8px; background: rgba(8, 20, 28, 0.88); color: var(--mint); font-size: 11px; letter-spacing: 0.08em; animation: pop-in 160ms ease-out; pointer-events: none; }
+.powerup-toast { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); padding: 8px 14px; border: 1px solid rgba(100, 251, 210, 0.3); border-radius: 8px; background: rgba(8, 20, 28, 0.88); color: var(--mint); font-size: 11px; letter-spacing: 0.08em; animation: toast-in 160ms ease-out; pointer-events: none; z-index: 20; }
+body.game-active .powerup-toast { top: 96px; }
 .minimap { position: absolute; left: 20px; bottom: 18px; width: 180px; padding: 6px; border: 1px solid rgba(126, 158, 181, 0.2); border-radius: 9px; background: rgba(7, 13, 23, 0.82); }
 .minimap > div { display: flex; align-items: center; justify-content: space-between; margin: 0 1px 5px; color: #8298aa; font-size: 8px; letter-spacing: 0.08em; }
 .minimap small { color: #435d70; font-size: 7px; }
@@ -412,6 +413,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+@keyframes toast-in { from { opacity: 0; transform: translateX(-50%) translateY(-6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 @keyframes announce-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes slow-spin { to { transform: rotate(360deg); } }
 
@@ -495,7 +497,8 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
   .minimap { left: 14px; bottom: 142px; width: 126px; padding: 5px; }
   .minimap canvas { width: 114px; height: 76px; }
   .minimap > div { font-size: 7px; }
-  .powerup-toast { bottom: 140px; white-space: nowrap; }
+  .powerup-toast { white-space: nowrap; }
+  body.game-active .powerup-toast { top: 128px; }
 }
 
 @media (max-width: 760px) {
