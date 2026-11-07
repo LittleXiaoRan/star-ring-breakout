@@ -3138,7 +3138,7 @@ ui.customMapEntry.addEventListener("click", () => {
     if (enemy.dead || enemy.spawnIn > 0) return;
     if (enemy.laserCooldown > 0) return;
     enemy.laserCooldown = 1.2;
-enemy.laserAngle = angle + random(-15, 15) * Math.PI / 180;
+enemy.laserAngle = angle + random(-8, 8) * Math.PI / 180;
     this.firePrismLaser(enemy);
   }
 
