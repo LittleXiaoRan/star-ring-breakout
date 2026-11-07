@@ -840,6 +840,7 @@ class Game {
     this.endlessSpdMul = 1;
     this.endlessMapIndex = 0;
     this.runMapOverride = null;
+    this.fixedEndlessMap = null;
     this.customMaps = this.loadCustomMaps();
     this.customCfg = { endless: true, bossArena: true };
     try {
@@ -2667,7 +2668,7 @@ ui.customMapEntry.addEventListener("click", () => {
       this.endlessMapIndex += 1;
       return map;
     }
-    return this.map;
+    return this.fixedEndlessMap || this.map;
   }
 
   startNextRound() {
@@ -2814,6 +2815,7 @@ ui.customMapEntry.addEventListener("click", () => {
     if (this.mode === "endless") {
       this.endlessRound = 1;
       this.map = startMap;
+      this.fixedEndlessMap = startMap;
       const pool = this.mapPool();
       this.endlessMapIndex = (pool.findIndex((map) => map.id === startMap.id) + 1) % Math.max(1, pool.length);
     } else {
@@ -3531,7 +3533,10 @@ enemy.laserAngle = angle + random(-8, 8) * Math.PI / 180;
       if (other.dead || other === enemy || other.type === "prism" || other.spawnIn > 0) continue;
       if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, other.x, other.y, other.radius + 5)) this.damageEnemy(other, 60);
     }
-    if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) this.hurtPlayer(18 * this.endlessDmgMul);
+    if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) {
+      const laserDamage = this.player.hp > 50 ? 18 * this.endlessDmgMul : Math.floor(this.player.hp / 3);
+      this.hurtPlayer(laserDamage);
+    }
     this.shake = Math.max(this.shake, 5);
     this.audio.laser();
   }

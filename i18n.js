@@ -225,6 +225,7 @@ mapComing: "功能开发中，敬请期待",
   },
   customSelect: {
     blocks: "{n} 个方块",
+    edit: "编辑",
     rename: "重命名",
     delete: "删除"
   },
@@ -393,6 +394,7 @@ mapComing: "Coming soon — stay tuned",
   },
   customSelect: {
     blocks: "{n} blocks",
+    edit: "Edit",
     rename: "Rename",
     delete: "Delete"
   },

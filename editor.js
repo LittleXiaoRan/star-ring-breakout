@@ -3,12 +3,14 @@
   const WORLD_WIDTH = 2400;
   const WORLD_HEIGHT = 1600;
   const BLOCKS = {
-    h: { width: 210, height: 48 },
-    v: { width: 210, height: 48, rot: 90 }
+    h: { width: 240, height: 60 },
+    v: { width: 240, height: 60, rot: 90 }
   };
   const HANDLE_OFFSET_PX = 30;
-  const SNAP = 30;
-  const ROT_SNAP = 15;
+  const SNAP_FINE = 5;
+  const SNAP_COARSE = 30;
+  const ROT_SNAP_FINE = 1;
+  const ROT_SNAP_COARSE = 15;
   const REACH_CELL = 30;
   const MIN_PLAYABLE_CELLS = 16;
   const STORAGE_KEY = "star-ring-custom-maps";
@@ -100,6 +102,9 @@
       this.future = [];
       this.dirty = false;
       this.customSelectedId = null;
+      this.editingMapId = null;
+      this.editorFromSelect = false;
+      this.ctrlHeld = false;
       this.pointer = { x: -1, y: -1, inside: false };
       this.drag = null;
       this.dialogResolver = null;
@@ -179,14 +184,25 @@
           this.requestExit();
         }
       });
+      window.addEventListener("keydown", (event) => {
+        if (event.code === "MetaLeft" || event.code === "MetaRight") this.ctrlHeld = true;
+      });
+      window.addEventListener("keyup", (event) => {
+        if (event.code === "MetaLeft" || event.code === "MetaRight") this.ctrlHeld = false;
+      });
+      window.addEventListener("blur", () => {
+        this.ctrlHeld = false;
+      });
     }
 
     // ---------- 编辑器开关 ----------
-    openEditor() {
+    openEditor(existingMap = null) {
       if (this.editorOpen || this.selectOpen) return;
       this.editorOpen = true;
-      this.blocks = [];
-      this.nextBlockId = 1;
+      this.blocks = (existingMap ? existingMap.blocks : []).map((block, index) => ({ ...block, id: index + 1 }));
+      this.nextBlockId = this.blocks.length + 1;
+      this.editingMapId = existingMap ? existingMap.id : null;
+      this.editorFromSelect = !!existingMap;
       this.selected = null;
       this.group = [];
       this.groupBounds = null;
@@ -203,6 +219,7 @@
 
     closeEditor() {
       this.editorOpen = false;
+      this.editingMapId = null;
       els.overlay.hidden = true;
       window.cancelAnimationFrame(this.raf);
     }
@@ -242,14 +259,15 @@
         card.setAttribute("role", "button");
         card.setAttribute("aria-pressed", String(map.id === this.customSelectedId));
         card.tabIndex = 0;
-        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
+        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
         card.querySelector("strong").textContent = map.name;
         card.querySelector("p").textContent = map.desc || I18N.t("customSelect.blocks", { n: map.blocks.length });
         card.addEventListener("click", (event) => {
           const action = event.target.closest("[data-act]");
           if (action) {
             event.stopPropagation();
-            if (action.dataset.act === "rename") this.renameMap(map.id);
+            if (action.dataset.act === "edit") this.editMap(map.id);
+            else if (action.dataset.act === "rename") this.renameMap(map.id);
             else this.deleteMap(map.id);
             return;
           }
@@ -307,6 +325,13 @@
       if (result) this.closeSelect();
     }
 
+    editMap(id) {
+      const map = loadMaps().find((entry) => entry.id === id);
+      if (!map) return;
+      this.closeSelect();
+      this.openEditor(map);
+    }
+
     async renameMap(id) {
       const maps = loadMaps();
       const map = maps.find((entry) => entry.id === id);
@@ -356,6 +381,7 @@
     async requestExit() {
       if (!this.dirty) {
         this.closeEditor();
+        if (this.editorFromSelect) this.openSelect();
         return;
       }
       const choice = await this.showDialog({
@@ -370,6 +396,7 @@
       });
       if (choice === "discard") {
         this.closeEditor();
+        if (this.editorFromSelect) this.openSelect();
       } else if (choice === "save") {
         const saved = await this.saveFlow(false);
         if (saved) {
@@ -459,11 +486,12 @@
         toast(I18N.t("custom.noBoss"), "#ff9dab");
         return false;
       }
+      const existing = this.editingMapId ? loadMaps().find((entry) => entry.id === this.editingMapId) : null;
       const choice = await this.showDialog({
         eyebrow: "CUSTOM SECTOR",
         title: I18N.t("custom.nameTitle"),
-        input: { value: this.suggestName(), placeholder: I18N.t("custom.namePlaceholder") },
-        input2: { value: "", placeholder: I18N.t("custom.descPlaceholder") },
+        input: { value: existing ? existing.name : this.suggestName(), placeholder: I18N.t("custom.namePlaceholder") },
+        input2: { value: existing && typeof existing.desc === "string" ? existing.desc : "", placeholder: I18N.t("custom.descPlaceholder") },
         buttons: [
           { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
           { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
@@ -472,13 +500,20 @@
       if (choice !== "save") return false;
       const name = els.dialogInput.value.trim();
       if (!name) return false;
+      const blocks = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
       const maps = loadMaps();
-      maps.push({
-        id: `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-        name,
-        desc: els.descInput.value.trim(),
-        blocks: this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }))
-      });
+      if (existing) {
+        existing.name = name;
+        existing.desc = els.descInput.value.trim();
+        existing.blocks = blocks;
+      } else {
+        maps.push({
+          id: `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          desc: els.descInput.value.trim(),
+          blocks
+        });
+      }
       saveMaps(maps);
       game.reloadCustomMaps();
       this.dirty = false;
@@ -603,6 +638,14 @@
       };
     }
 
+    getSnap() {
+      return this.ctrlHeld ? SNAP_COARSE : SNAP_FINE;
+    }
+
+    getRotSnap() {
+      return this.ctrlHeld ? ROT_SNAP_COARSE : ROT_SNAP_FINE;
+    }
+
     ghostBlock() {
       const point = this.worldPoint();
       const spec = BLOCKS[this.material];
@@ -611,8 +654,9 @@
       const rotated = !!spec.rot;
       const extX = rotated ? hh : hw;
       const extY = rotated ? hw : hh;
-      const centerX = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round(point.x / SNAP) * SNAP));
-      const centerY = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round(point.y / SNAP) * SNAP));
+      const snap = this.getSnap();
+      const centerX = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round(point.x / snap) * snap));
+      const centerY = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round(point.y / snap) * snap));
       return { id: 0, x: centerX - hw, y: centerY - hh, width: spec.width, height: spec.height, rot: spec.rot || 0 };
     }
 
@@ -765,7 +809,8 @@
         const dy = point.y - bounds.cy;
         if (dx * dx + dy * dy < 2304) return;
         const deg = (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
-        const snapped = ((Math.round(deg / ROT_SNAP) * ROT_SNAP) % 360 + 360) % 360;
+        const rotSnap = this.getRotSnap();
+        const snapped = ((Math.round(deg / rotSnap) * rotSnap) % 360 + 360) % 360;
         const rad = snapped * Math.PI / 180;
         const cosR = Math.cos(rad);
         const sinR = Math.sin(rad);
@@ -798,7 +843,8 @@
         const dy = point.y - cy;
         if (dx * dx + dy * dy < 2304) return;
         const deg = (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
-        const snapped = ((Math.round(deg / ROT_SNAP) * ROT_SNAP) % 360 + 360) % 360;
+        const rotSnap = this.getRotSnap();
+        const snapped = ((Math.round(deg / rotSnap) * rotSnap) % 360 + 360) % 360;
         if (snapped !== (block.rot || 0)) {
           const candidate = { ...block, rot: snapped };
           const blocked = this.blocks.some((other) => other !== block && this.fullyOverlaps(other, candidate));
@@ -818,8 +864,9 @@
         const dy = point.y - drag.startY;
         if (!drag.moved && dx * dx + dy * dy < 400) return;
         drag.moved = true;
-        const sx = Math.round(dx / SNAP) * SNAP;
-        const sy = Math.round(dy / SNAP) * SNAP;
+        const snap = this.getSnap();
+        const sx = Math.round(dx / snap) * snap;
+        const sy = Math.round(dy / snap) * snap;
         const candidates = drag.startBlocks.map((block) => ({
           x: block.x + sx,
           y: block.y + sy,
@@ -851,8 +898,9 @@
       const rotated = ((block.rot || 0) % 180) !== 0;
       const extX = rotated ? hh : hw;
       const extY = rotated ? hw : hh;
-      const cx = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round((drag.origX + hw + dx) / SNAP) * SNAP));
-      const cy = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round((drag.origY + hh + dy) / SNAP) * SNAP));
+      const snap = this.getSnap();
+      const cx = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round((drag.origX + hw + dx) / snap) * snap));
+      const cy = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round((drag.origY + hh + dy) / snap) * snap));
       const candidate = { x: cx - hw, y: cy - hh, width: block.width, height: block.height, rot: block.rot || 0 };
       const blocked = this.blocks.some((other) => other !== block && this.fullyOverlaps(other, candidate));
       if (!blocked) {

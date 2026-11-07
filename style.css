@@ -559,7 +559,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .file-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
 
 .editor-overlay { position: absolute; inset: 0; z-index: 13; background: #0d0a1a; display: flex; }
-.editor-side { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #0a1120; }
+.editor-side { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #0a1120; overflow-y: auto; overflow-x: hidden; }
 .editor-side-left { width: 76px; align-items: stretch; }
 .editor-side-right { width: 76px; align-items: stretch; }
 .editor-canvas-wrap { flex: 1 1 auto; min-width: 0; position: relative; }
@@ -579,7 +579,7 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .editor-tool[data-act="undo"] { margin-top: auto; }
 .editor-tool[data-act] { font-size: 10px; min-height: 30px; color: #7d8fa3; }
 .editor-materials { display: flex; flex-direction: column; gap: 8px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: rgba(10, 17, 28, 0.9); }
-.editor-material { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 72px; padding: 8px 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #a9b8c9; font-size: 11px; cursor: pointer; transition: 150ms ease; }
+.editor-material { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 72px; padding: 8px 4px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #a9b8c9; font-size: 11px; cursor: pointer; transition: 150ms ease; white-space: nowrap; }
 .editor-material i { position: relative; display: block; width: 32px; height: 32px; }
 .editor-material i::before {
   content: "";
