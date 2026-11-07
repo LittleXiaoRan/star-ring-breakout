@@ -202,11 +202,15 @@
               </div>
             </div>
           </div>
+          <div class="map-topbar custom-select-tools">
+            <button id="custom-create-btn" class="mode-option" type="button" data-en="Map Maker">自制地图</button>
+            <button id="custom-import-btn" class="mode-option" type="button" data-en="Import Map">导入地图</button>
+          </div>
           <p class="eyebrow">SELECT SECTOR</p>
           <h2 data-en="Choose Custom Sector">选择自制星域</h2>
           <p class="panel-subtitle" data-en="Different terrain and hazards — waves and upgrades stay the same">地形与危险机制不同，波次与强化规则一致</p>
           <div id="custom-map-cards" class="map-cards"></div>
-          <p id="custom-empty" class="custom-empty" hidden data-en="No custom sectors yet — go back and use the Custom Sector entry at the top right to create your first map.">还没有自制星域——返回选择星域，点击右上角的「自制星域」创建第一张地图。</p>
+          <p id="custom-empty" class="custom-empty" hidden data-en="No custom sectors yet — use Map Maker at the top right to create your first map, or Import Map to paste a map code.">还没有自制星域——点击右上角「自制地图」创建第一张地图，或「导入地图」粘贴地图码。</p>
           <div class="map-actions">
             <button id="custom-select-back-btn" class="secondary-btn" type="button" data-en="Back">返回</button>
             <button id="custom-select-start-btn" class="primary-btn" type="button" data-en="Enter Sector">进入星域</button>
@@ -215,12 +219,13 @@
       </div>
 
       <div id="editor-dialog-overlay" class="overlay editor-dialog-overlay" hidden>
-        <section class="panel compact-panel editor-dialog-panel" role="dialog" aria-modal="true">
+        <section id="editor-dialog-panel" class="panel compact-panel editor-dialog-panel" role="dialog" aria-modal="true">
           <p id="editor-dialog-eyebrow" class="eyebrow">CUSTOM SECTOR</p>
           <h2 id="editor-dialog-title"></h2>
           <p id="editor-dialog-text" class="panel-subtitle" hidden></p>
           <input id="editor-dialog-input" type="text" maxlength="16" hidden>
           <input id="editor-dialog-desc-input" type="text" maxlength="24" hidden>
+          <textarea id="editor-dialog-code" hidden></textarea>
           <div id="editor-dialog-actions" class="editor-dialog-actions"></div>
         </section>
       </div>

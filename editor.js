@@ -50,12 +50,16 @@
     empty: byId("custom-empty"),
     startBtn: byId("custom-select-start-btn"),
     back: byId("custom-select-back-btn"),
+    createBtn: byId("custom-create-btn"),
+    importBtn: byId("custom-import-btn"),
     dialog: byId("editor-dialog-overlay"),
+    dialogPanel: byId("editor-dialog-panel"),
     dialogEyebrow: byId("editor-dialog-eyebrow"),
     dialogTitle: byId("editor-dialog-title"),
     dialogText: byId("editor-dialog-text"),
     dialogInput: byId("editor-dialog-input"),
     descInput: byId("editor-dialog-desc-input"),
+    code: byId("editor-dialog-code"),
     dialogActions: byId("editor-dialog-actions")
   };
 
@@ -85,6 +89,164 @@
     toastTimer = window.setTimeout(() => {
       element.hidden = true;
     }, 2200);
+  }
+
+  const clampNum = (value, min, max) => Math.min(max, Math.max(min, value));
+  const CODE_PREFIX = "SRB1.";
+  const CODE_KEY = [0x5a, 0xa5, 0x3c, 0xc3];
+
+  function checksum16(bytes) {
+    let hash = 0x811c;
+    for (const byte of bytes) {
+      hash ^= byte;
+      hash = (hash * 0x01000193) & 0xffff;
+    }
+    return hash;
+  }
+
+  function encodeMapCode(entry) {
+    const writer = { bits: [] };
+    const push = (value, count) => {
+      for (let i = count - 1; i >= 0; i -= 1) writer.bits.push((value >> i) & 1);
+    };
+    const nameBytes = Array.from(new TextEncoder().encode(entry.name).slice(0, 255));
+    const descBytes = Array.from(new TextEncoder().encode(typeof entry.desc === "string" ? entry.desc : "").slice(0, 255));
+    push(nameBytes.length, 8);
+    for (const byte of nameBytes) push(byte, 8);
+    push(descBytes.length, 8);
+    for (const byte of descBytes) push(byte, 8);
+    const blocks = (entry.blocks || []).slice(0, 255);
+    push(blocks.length, 8);
+    for (const block of blocks) {
+      push(Math.round(clampNum(Number(block.x) || 0, 0, 2400) / 5), 9);
+      push(Math.round(clampNum(Number(block.y) || 0, 0, 1600) / 5), 9);
+      push(Math.round(clampNum(Number(block.width) || 0, 0, 2400) / 5), 9);
+      push(Math.round(clampNum(Number(block.height) || 0, 0, 1600) / 5), 9);
+      push(((Math.round((Number(block.rot) || 0) / 15) % 24) + 24) % 24, 5);
+    }
+    const data = [];
+    for (let i = 0; i < writer.bits.length; i += 8) {
+      let byte = 0;
+      for (let b = 0; b < 8; b += 1) byte = (byte << 1) | (writer.bits[i + b] || 0);
+      data.push(byte);
+    }
+    const hash = checksum16(data);
+    const bytes = [...data, hash >> 8, hash & 0xff].map((byte, index) => byte ^ CODE_KEY[index % CODE_KEY.length]);
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return CODE_PREFIX + btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function decodeMapCode(code) {
+    if (typeof code !== "string") return null;
+    const trimmed = code.trim();
+    if (!trimmed.startsWith(CODE_PREFIX)) return null;
+    let binary = "";
+    try {
+      binary = atob(trimmed.slice(CODE_PREFIX.length).replace(/-/g, "+").replace(/_/g, "/"));
+    } catch {
+      return null;
+    }
+    const bytes = [];
+    for (let i = 0; i < binary.length; i += 1) bytes.push(binary.charCodeAt(i) ^ CODE_KEY[i % CODE_KEY.length]);
+    if (bytes.length < 3) return null;
+    const data = bytes.slice(0, -2);
+    const hash = checksum16(data);
+    if (hash !== ((bytes[bytes.length - 2] << 8) | bytes[bytes.length - 1])) return null;
+    const bits = [];
+    for (const byte of data) {
+      for (let b = 7; b >= 0; b -= 1) bits.push((byte >> b) & 1);
+    }
+    let pos = 0;
+    const read = (count) => {
+      if (pos + count > bits.length) return null;
+      let value = 0;
+      for (let i = 0; i < count; i += 1) value = (value << 1) | bits[pos + i];
+      pos += count;
+      return value;
+    };
+    const readChunk = () => {
+      const length = read(8);
+      if (length === null) return null;
+      const chunk = [];
+      for (let i = 0; i < length; i += 1) {
+        const byte = read(8);
+        if (byte === null) return null;
+        chunk.push(byte);
+      }
+      return chunk;
+    };
+    const nameBytes = readChunk();
+    const descBytes = readChunk();
+    const blockCount = read(8);
+    if (nameBytes === null || descBytes === null || blockCount === null) return null;
+    let name = "";
+    let desc = "";
+    try {
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      name = decoder.decode(Uint8Array.from(nameBytes)).trim();
+      desc = decoder.decode(Uint8Array.from(descBytes));
+    } catch {
+      return null;
+    }
+    if (!name) return null;
+    if (blockCount < 1 || blockCount > 255) return null;
+    const blocks = [];
+    for (let i = 0; i < blockCount; i += 1) {
+      const qx = read(9);
+      const qy = read(9);
+      const qw = read(9);
+      const qh = read(9);
+      const rot = read(5);
+      if (qx === null || qy === null || qw === null || qh === null || rot === null) return null;
+      if (qx > 480 || qy > 320 || qw > 480 || qh > 320 || qw < 1 || qh < 1) return null;
+      blocks.push({ x: qx * 5, y: qy * 5, width: qw * 5, height: qh * 5, rot: rot * 15 });
+    }
+    return { name, desc, blocks };
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return true;
+      } catch {}
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {}
+    area.remove();
+    return ok;
+  }
+
+  function newMapId() {
+    return `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  function uniqueName(name, excludeId = null) {
+    const maps = loadMaps();
+    const base = name.trim();
+    const taken = (candidate) => maps.some((entry) => entry.id !== excludeId && entry.name === candidate);
+    if (!taken(base)) return base;
+    const numbered = base.match(/^(.*?)\s*(\d+)$/);
+    if (numbered && numbered[1].trim()) {
+      const stem = numbered[1].trim();
+      let n = Number(numbered[2]);
+      while (taken(`${stem} ${n}`)) n += 1;
+      return `${stem} ${n}`;
+    }
+    let n = 2;
+    while (taken(`${base} ${n}`)) n += 1;
+    return `${base} ${n}`;
   }
 
   class MapEditor {
@@ -143,6 +305,8 @@
       });
       els.back.addEventListener("click", () => this.closeSelect());
       els.startBtn.addEventListener("click", () => this.startSelected());
+      els.createBtn.addEventListener("click", () => this.openCreateMap());
+      els.importBtn.addEventListener("click", () => this.importMap());
       els.selectOverlay.addEventListener("click", (event) => {
         if (event.target === els.selectOverlay) this.closeSelect();
       });
@@ -259,14 +423,15 @@
         card.setAttribute("role", "button");
         card.setAttribute("aria-pressed", String(map.id === this.customSelectedId));
         card.tabIndex = 0;
-        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
+        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="share">${I18N.t("customSelect.share")}</button><button type="button" class="card-btn" data-act="edit">${I18N.t("customSelect.edit")}</button><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
         card.querySelector("strong").textContent = map.name;
         card.querySelector("p").textContent = map.desc || I18N.t("customSelect.blocks", { n: map.blocks.length });
         card.addEventListener("click", (event) => {
           const action = event.target.closest("[data-act]");
           if (action) {
             event.stopPropagation();
-            if (action.dataset.act === "edit") this.editMap(map.id);
+            if (action.dataset.act === "share") this.shareMap(map.id);
+            else if (action.dataset.act === "edit") this.editMap(map.id);
             else if (action.dataset.act === "rename") this.renameMap(map.id);
             else this.deleteMap(map.id);
             return;
@@ -332,6 +497,61 @@
       this.openEditor(map);
     }
 
+    openCreateMap() {
+      this.closeSelect();
+      this.openEditor();
+      this.editorFromSelect = true;
+    }
+
+    async importMap() {
+      let lastValue = "";
+      for (;;) {
+        const choice = await this.showDialog({
+          eyebrow: "CUSTOM SECTOR",
+          title: I18N.t("custom.importTitle"),
+          text: I18N.t("custom.importHint"),
+          input: { value: lastValue, placeholder: I18N.t("custom.importPlaceholder"), maxlength: 5000, multiline: true },
+          buttons: [
+            { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+            { label: I18N.t("custom.importConfirm"), value: "import", className: "primary-btn" }
+          ]
+        });
+        if (choice !== "import") return;
+        lastValue = els.code.value.trim();
+        const decoded = decodeMapCode(lastValue);
+        if (!decoded) {
+          toast(I18N.t("custom.importInvalid"), "#ff9dab");
+          continue;
+        }
+        const maps = loadMaps();
+        maps.push({ id: newMapId(), name: uniqueName(decoded.name), desc: decoded.desc, blocks: decoded.blocks });
+        saveMaps(maps);
+        game.reloadCustomMaps();
+        this.renderCards();
+        toast(I18N.t("custom.imported", { name: decoded.name }));
+        return;
+      }
+    }
+
+    async shareMap(id) {
+      const map = loadMaps().find((entry) => entry.id === id);
+      if (!map) return;
+      const code = encodeMapCode(map);
+      const choice = await this.showDialog({
+        eyebrow: "CUSTOM SECTOR",
+        title: I18N.t("custom.shareTitle"),
+        text: I18N.t("custom.shareHint"),
+        input: { value: code, placeholder: "", readonly: true, maxlength: 10000, multiline: true },
+        buttons: [
+          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+          { label: I18N.t("custom.copy"), value: "copy", className: "primary-btn" }
+        ]
+      });
+      if (choice !== "copy") return;
+      const ok = await copyText(code);
+      toast(ok ? I18N.t("custom.copied") : I18N.t("custom.copyFailed"), ok ? "#64fbd2" : "#ff9dab");
+    }
+
     async renameMap(id) {
       const maps = loadMaps();
       const map = maps.find((entry) => entry.id === id);
@@ -349,12 +569,12 @@
       if (choice !== "save") return;
       const name = els.dialogInput.value.trim();
       if (!name) return;
-      map.name = name;
+      map.name = uniqueName(name, map.id);
       map.desc = els.descInput.value.trim();
       saveMaps(maps);
       game.reloadCustomMaps();
       this.renderCards();
-      toast(I18N.t("custom.renamed"));
+      toast(I18N.t("custom.renamedTo", { name: map.name }));
     }
 
     async deleteMap(id) {
@@ -503,13 +723,13 @@
       const blocks = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
       const maps = loadMaps();
       if (existing) {
-        existing.name = name;
+        existing.name = uniqueName(name, existing.id);
         existing.desc = els.descInput.value.trim();
         existing.blocks = blocks;
       } else {
         maps.push({
-          id: `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-          name,
+          id: newMapId(),
+          name: uniqueName(name),
           desc: els.descInput.value.trim(),
           blocks
         });
@@ -539,12 +759,18 @@
         els.dialogTitle.textContent = title;
         els.dialogText.hidden = !text;
         els.dialogText.textContent = text;
-        els.dialogInput.hidden = !input;
-        els.dialogInput.value = input ? input.value : "";
-        els.dialogInput.placeholder = input ? input.placeholder || "" : "";
+        const multiline = !!(input && input.multiline);
+        els.dialogPanel.classList.toggle("map-code-dialog", multiline);
+        const field = multiline ? els.code : els.dialogInput;
+        (multiline ? els.dialogInput : els.code).hidden = true;
         els.descInput.hidden = !input2;
         els.descInput.value = input2 ? input2.value : "";
         els.descInput.placeholder = input2 ? input2.placeholder || "" : "";
+        field.hidden = !input;
+        field.value = input ? input.value : "";
+        field.placeholder = input ? input.placeholder || "" : "";
+        field.readOnly = !!(input && input.readonly);
+        field.maxLength = Math.max(0, input && input.maxlength != null ? input.maxlength : 16);
         els.dialogActions.replaceChildren();
         for (const definition of buttons) {
           const button = document.createElement("button");
@@ -555,17 +781,17 @@
           els.dialogActions.appendChild(button);
         }
         if (input) {
-          els.dialogInput.oninput = () => {
+          field.oninput = () => {
             const primary = els.dialogActions.querySelector(".primary-btn");
-            if (primary) primary.disabled = !els.dialogInput.value.trim();
+            if (primary) primary.disabled = !field.value.trim();
           };
-          els.dialogInput.oninput();
+          field.oninput();
         }
         els.dialog.hidden = false;
         if (input) {
           window.setTimeout(() => {
-            els.dialogInput.focus();
-            els.dialogInput.select();
+            field.focus();
+            field.select();
           }, 30);
         }
       });
@@ -574,7 +800,9 @@
     resolveDialog(value) {
       els.dialog.hidden = true;
       els.dialogInput.oninput = null;
+      els.code.oninput = null;
       els.descInput.oninput = null;
+      els.dialogPanel.classList.remove("map-code-dialog");
       if (this.dialogResolver) {
         const resolver = this.dialogResolver;
         this.dialogResolver = null;

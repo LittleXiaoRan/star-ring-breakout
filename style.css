@@ -599,6 +599,8 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .editor-material.selected i::before { background: #64fbd2; border-color: #64fbd2; }
 
 .custom-select-overlay { z-index: 13; }
+.custom-select-tools { left: auto; right: 14px; }
+.custom-select-tools .mode-option { justify-content: center; padding: 0 12px; }
 .custom-select-panel .map-actions { grid-template-columns: 1fr 2fr; }
 .custom-select-panel .map-actions .secondary-btn { margin-top: 0; }
 .custom-map-card { cursor: pointer; }
@@ -615,6 +617,9 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .editor-dialog-panel input { width: 100%; min-height: 44px; padding: 0 13px; border: 1px solid var(--line); border-radius: 9px; background: #0b1521; color: var(--text); font-size: 14px; font-family: inherit; }
 .editor-dialog-panel input + input { margin-top: 10px; }
 .editor-dialog-panel input:focus { outline: 2px solid var(--mint); outline-offset: 2px; border-color: transparent; }
+.editor-dialog-panel.map-code-dialog { width: min(100%, 600px); }
+.editor-dialog-panel textarea { width: 100%; min-height: 220px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: #0b1521; color: var(--text); font-size: 12px; line-height: 1.7; font-family: inherit; resize: vertical; word-break: break-all; white-space: pre-wrap; }
+.editor-dialog-panel textarea:focus { outline: 2px solid var(--mint); outline-offset: 2px; border-color: transparent; }
 .editor-dialog-actions { display: flex; gap: 10px; margin-top: 18px; }
 .editor-dialog-actions button { flex: 1; width: auto; }
 .editor-dialog-actions .secondary-btn { margin-top: 0; }
