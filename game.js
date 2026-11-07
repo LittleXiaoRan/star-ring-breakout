@@ -353,17 +353,6 @@ function distanceToRect(x, y, rect) {
   return Math.hypot(lx - clamp(lx, -hw, hw), ly - clamp(ly, -hh, hh));
 }
 
-function rotRectAABB(rect) {
-  if (!rect.rot) return rect;
-  const hw = rect.width / 2;
-  const hh = rect.height / 2;
-  const cos = Math.abs(Math.cos(rect.rot));
-  const sin = Math.abs(Math.sin(rect.rot));
-  const extentX = hw * cos + hh * sin;
-  const extentY = hw * sin + hh * cos;
-  return { x: rect.x + hw - extentX, y: rect.y + hh - extentY, width: extentX * 2, height: extentY * 2 };
-}
-
 function resolveCircleRect(entity, radius, rect) {
   if (!rect.rot) {
     const nearestX = clamp(entity.x, rect.x, rect.x + rect.width);
@@ -781,9 +770,9 @@ class Game {
     this.pickups = [];
     this.powerups = [];
     this.obstacles = [];
-    this.flow = null;
-    this.flowTimer = 0;
     this._navCache = null;
+    this._navQueue = [];
+    this._navJob = null;
     this.powerupPoints = [];
     this.particles = [];
     this.rings = [];
@@ -1408,309 +1397,510 @@ ui.customMapEntry.addEventListener("click", () => {
     return collided;
   }
 
-  buildFlowField() {
-    const cell = 48;
-    const cols = Math.ceil(this.world.width / cell);
-    const rows = Math.ceil(this.world.height / cell);
-    const size = cols * rows;
-    const margin = 24;
-    const blocked = new Uint8Array(size);
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const x0 = c * cell;
-        const y0 = r * cell;
-        const x1 = Math.min(x0 + cell, this.world.width);
-        const y1 = Math.min(y0 + cell, this.world.height);
-        for (const obstacle of this.obstacles) {
-          const bounds = rotRectAABB(obstacle);
-          if (x1 > bounds.x - margin && x0 < bounds.x + bounds.width + margin && y1 > bounds.y - margin && y0 < bounds.y + bounds.height + margin) {
-            blocked[r * cols + c] = 1;
-            break;
+  hasLineOfSight(x0, y0, x1, y1, clearance) {
+    for (const obstacle of this.obstacles) {
+      const hw = obstacle.width / 2;
+      const hh = obstacle.height / 2;
+      const cos = Math.cos(obstacle.rot || 0);
+      const sin = Math.sin(obstacle.rot || 0);
+      const dx0 = x0 - obstacle.x - hw;
+      const dy0 = y0 - obstacle.y - hh;
+      const dx1 = x1 - obstacle.x - hw;
+      const dy1 = y1 - obstacle.y - hh;
+      const ax = dx0 * cos + dy0 * sin;
+      const ay = -dx0 * sin + dy0 * cos;
+      const bx = dx1 * cos + dy1 * sin;
+      const by = -dx1 * sin + dy1 * cos;
+      const hitsBox = (ex, ey) => {
+        let enter = 0;
+        let exit = 1;
+        for (const [a, d, extent] of [[ax, bx - ax, ex], [ay, by - ay, ey]]) {
+          if (Math.abs(d) < 1e-10) {
+            if (Math.abs(a) > extent) return false;
+          } else {
+            const t0 = (-extent - a) / d;
+            const t1 = (extent - a) / d;
+            enter = Math.max(enter, Math.min(t0, t1));
+            exit = Math.min(exit, Math.max(t0, t1));
+            if (enter > exit) return false;
           }
         }
-      }
-    }
-    const pc = clamp(Math.floor(this.player.x / cell), 0, cols - 1);
-    const pr = clamp(Math.floor(this.player.y / cell), 0, rows - 1);
-    const start = pr * cols + pc;
-    blocked[start] = 0;
-    const dist = new Int32Array(size);
-    dist.fill(-1);
-    dist[start] = 0;
-    const queue = [start];
-    let head = 0;
-    while (head < queue.length) {
-      const index = queue[head];
-      head += 1;
-      const c = index % cols;
-      const r = (index / cols) | 0;
-      const next = dist[index] + 1;
-      if (c > 0 && !blocked[index - 1] && dist[index - 1] < 0) { dist[index - 1] = next; queue.push(index - 1); }
-      if (c < cols - 1 && !blocked[index + 1] && dist[index + 1] < 0) { dist[index + 1] = next; queue.push(index + 1); }
-      if (r > 0 && !blocked[index - cols] && dist[index - cols] < 0) { dist[index - cols] = next; queue.push(index - cols); }
-      if (r < rows - 1 && !blocked[index + cols] && dist[index + cols] < 0) { dist[index + cols] = next; queue.push(index + cols); }
-    }
-    this.flow = { cols, rows, cell, dist };
-  }
-
-  flowSample(x, y) {
-    const flow = this.flow;
-    const fx = x / flow.cell;
-    const fy = y / flow.cell;
-    const c0 = clamp(Math.floor(fx), 0, flow.cols - 1);
-    const r0 = clamp(Math.floor(fy), 0, flow.rows - 1);
-    const c1 = Math.min(c0 + 1, flow.cols - 1);
-    const r1 = Math.min(r0 + 1, flow.rows - 1);
-    const tx = fx - c0;
-    const ty = fy - r0;
-    const value = (d) => (d < 0 ? 1e6 : d);
-    const top = value(flow.dist[r0 * flow.cols + c0]) * (1 - tx) + value(flow.dist[r0 * flow.cols + c1]) * tx;
-    const bottom = value(flow.dist[r1 * flow.cols + c0]) * (1 - tx) + value(flow.dist[r1 * flow.cols + c1]) * tx;
-    return top * (1 - ty) + bottom * ty;
-  }
-
-  flowDirection(x, y) {
-    if (!this.flow) return null;
-    const eps = 20;
-    const gx = this.flowSample(x + eps, y) - this.flowSample(x - eps, y);
-    const gy = this.flowSample(x, y + eps) - this.flowSample(x, y - eps);
-    const length = Math.hypot(gx, gy);
-    if (length < 0.001) return null;
-    return { nx: -gx / length, ny: -gy / length };
-  }
-
-  hasLineOfSight(x0, y0, x1, y1, clearance) {
-    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 24));
-    for (let i = 1; i < steps; i += 1) {
-      const t = i / steps;
-      const px = x0 + (x1 - x0) * t;
-      const py = y0 + (y1 - y0) * t;
-      for (const obstacle of this.obstacles) {
-        if (circleTouchesRect(px, py, clearance, obstacle)) return false;
+        return true;
+      };
+      // Sweeping a circle past a rectangle gives two strips and four rounded corners.
+      if (hitsBox(hw + clearance, hh) || hitsBox(hw, hh + clearance)) return false;
+      for (const cx of [-hw, hw]) {
+        for (const cy of [-hh, hh]) {
+          if (segmentHitsCircle(ax, ay, bx, by, cx, cy, clearance)) return false;
+        }
       }
     }
     return true;
   }
 
-  // --- A* Pathfinding ---
+  canEnemyTravel(x0, y0, x1, y1, radius) {
+    const margin = radius + 14;
+    if (x1 < margin || x1 > this.world.width - margin || y1 < margin || y1 > this.world.height - margin) return false;
+    if (this.hasLineOfSight(x0, y0, x1, y1, radius + 1)) return true;
+    // A body already touching a wall must still be able to move away from it.
+    return this.obstacles.some((obstacle) => distanceToRect(x0, y0, obstacle) <= radius + 1)
+      && this.hasLineOfSight(x0, y0, x1, y1, radius - 0.001);
+  }
 
-  getNavGrid(radius) {
-    if (!this._navCache) this._navCache = Object.create(null);
-    const r = Math.round(radius);
-    if (this._navCache[r]) return this._navCache[r];
-    const cols = Math.ceil(this.world.width / REACH_CELL);
-    const rows = Math.ceil(this.world.height / REACH_CELL);
-    const total = cols * rows;
-    const blocked = new Uint8Array(total);
-    const rp = radius + 5;
-    const sampleOffsets = [-10, 0, 10];
-    for (let idx = 0; idx < total; idx += 1) {
-      const cx = (idx % cols) * REACH_CELL + REACH_CELL / 2;
-      const cy = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
-      if (cx > this.world.width || cy > this.world.height) { blocked[idx] = 1; continue; }
-      let cellBlocked = false;
-      sampleLoop: for (let sx = 0; sx < 3; sx += 1) {
-        for (let sy = 0; sy < 3; sy += 1) {
-          const x = cx + sampleOffsets[sx];
-          const y = cy + sampleOffsets[sy];
-          for (let oi = 0; oi < this.obstacles.length; oi += 1) {
-            if (distanceToRect(x, y, this.obstacles[oi]) < rp) { cellBlocked = true; break sampleLoop; }
+  nearestRectPoint(x, y, rect) {
+    if (!rect.rot) {
+      return { x: clamp(x, rect.x, rect.x + rect.width), y: clamp(y, rect.y, rect.y + rect.height) };
+    }
+    const hw = rect.width / 2;
+    const hh = rect.height / 2;
+    const dx = x - (rect.x + hw);
+    const dy = y - (rect.y + hh);
+    const cos = Math.cos(rect.rot);
+    const sin = Math.sin(rect.rot);
+    const lx = dx * cos + dy * sin;
+    const ly = -dx * sin + dy * cos;
+    const nx = clamp(lx, -hw, hw);
+    const ny = clamp(ly, -hh, hh);
+    return { x: rect.x + hw + nx * cos - ny * sin, y: rect.y + hh + nx * sin + ny * cos };
+  }
+
+  contactNormal(x, y) {
+    let bestX = 0;
+    let bestY = 0;
+    let bestDistance = Infinity;
+    for (const obstacle of this.obstacles) {
+      const point = this.nearestRectPoint(x, y, obstacle);
+      const dx = x - point.x;
+      const dy = y - point.y;
+      const distance = dx * dx + dy * dy;
+      if (distance <= 1600 && distance < bestDistance) {
+        bestDistance = distance;
+        bestX = dx;
+        bestY = dy;
+      }
+    }
+    for (const orbiter of this.orbiters) {
+      const position = this.orbiterPosition(orbiter);
+      const dx = x - position.x;
+      const dy = y - position.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 1) continue;
+      const surface = Math.max(distance - orbiter.radius, 0.5);
+      if (surface <= 40 && surface * surface < bestDistance) {
+        bestDistance = surface * surface;
+        bestX = dx;
+        bestY = dy;
+      }
+    }
+    if (bestDistance < 1e-6 || !Number.isFinite(bestDistance)) return null;
+    const length = Math.hypot(bestX, bestY);
+    return { x: bestX / length, y: bestY / length };
+  }
+
+  movePlayer(entity, dx, dy, clearance) {
+    let rx = dx;
+    let ry = dy;
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      if (Math.hypot(rx, ry) < 0.01) return;
+      if (this.hasLineOfSight(entity.x, entity.y, entity.x + rx, entity.y + ry, clearance)) {
+        entity.x += rx;
+        entity.y += ry;
+        return;
+      }
+      let low = 0;
+      let high = 1;
+      for (let i = 0; i < 12; i += 1) {
+        const mid = (low + high) / 2;
+        if (this.hasLineOfSight(entity.x, entity.y, entity.x + rx * mid, entity.y + ry * mid, clearance)) low = mid;
+        else high = mid;
+      }
+      entity.x += rx * low;
+      entity.y += ry * low;
+      const normal = this.contactNormal(entity.x, entity.y);
+      if (!normal) return;
+      const dot = rx * normal.x + ry * normal.y;
+      if (dot >= 0) return;
+      rx -= normal.x * dot;
+      ry -= normal.y * dot;
+    }
+  }
+
+  gapWidthAhead(entity, dirX, dirY) {
+    const length = Math.hypot(dirX, dirY);
+    if (length < 1e-6) return 0;
+    const dx = dirX / length;
+    const dy = dirY / length;
+    const nx = -dy;
+    const ny = dx;
+    const probe = (px, py) => {
+      const hit = (sign) => {
+        for (let step = 0; step <= 20; step += 1) {
+          const distance = step * 2;
+          const tx = px + nx * distance * sign;
+          const ty = py + ny * distance * sign;
+          if (tx < 10 || tx > this.world.width - 10 || ty < 10 || ty > this.world.height - 10) return distance;
+          for (const obstacle of this.obstacles) {
+            if (distanceToRect(tx, ty, obstacle) <= 0) return distance;
+          }
+          for (const orbiter of this.orbiters) {
+            const position = this.orbiterPosition(orbiter);
+            if ((tx - position.x) ** 2 + (ty - position.y) ** 2 <= orbiter.radius ** 2) return distance;
           }
         }
-      }
-      if (cellBlocked) blocked[idx] = 1;
+        return -1;
+      };
+      const first = hit(1);
+      if (first < 0) return 0;
+      const second = hit(-1);
+      if (second < 0) return 0;
+      return first + second;
+    };
+    return Math.max(probe(entity.x + dx * 16, entity.y + dy * 16), probe(entity.x, entity.y));
+  }
+
+  positionFits(x, y, radius) {
+    if (x < radius + 10 || x > this.world.width - radius - 10 || y < radius + 10 || y > this.world.height - radius - 10) return false;
+    for (const obstacle of this.obstacles) {
+      if (distanceToRect(x, y, obstacle) < radius - 0.5) return false;
     }
-    const grid = { cols, rows, blocked };
-    this._navCache[r] = grid;
+    for (const orbiter of this.orbiters) {
+      const position = this.orbiterPosition(orbiter);
+      if ((x - position.x) ** 2 + (y - position.y) ** 2 < (radius + orbiter.radius - 0.5) ** 2) return false;
+    }
+    return true;
+  }
+
+  escapeNarrowGap(entity, dirX, dirY) {
+    const length = Math.hypot(dirX, dirY);
+    if (length < 1e-6) return;
+    const dx = dirX / length;
+    const dy = dirY / length;
+    if (this.positionFits(entity.x, entity.y, entity.radius)) return;
+    for (const sign of [1, -1]) {
+      for (let i = 1; i <= 80; i += 1) {
+        const tx = entity.x + dx * sign * i * 3;
+        const ty = entity.y + dy * sign * i * 3;
+        if (this.positionFits(tx, ty, entity.radius)) {
+          entity.x = tx;
+          entity.y = ty;
+          return;
+        }
+      }
+    }
+  }
+
+
+  *getNavGrid(radius) {
+    if (!this._navCache) this._navCache = Object.create(null);
+    if (this._navCache[radius]) return this._navCache[radius];
+    const cell = 15;
+    const cols = Math.ceil(this.world.width / cell);
+    const rows = Math.ceil(this.world.height / cell);
+    const blocked = new Uint8Array(cols * rows);
+    const edges = new Int8Array(cols * rows * 8).fill(-1);
+    for (let idx = 0; idx < blocked.length; idx += 1) {
+      if (idx % 32 === 0) yield;
+      const x = (idx % cols) * cell + cell / 2;
+      const y = Math.floor(idx / cols) * cell + cell / 2;
+      const margin = radius + 14;
+      blocked[idx] = x < margin || y < margin || x > this.world.width - margin || y > this.world.height - margin
+        || this.obstacles.some((obstacle) => distanceToRect(x, y, obstacle) <= radius + 1) ? 1 : 0;
+    }
+    const grid = { cell, cols, rows, blocked, edges };
+    this._navCache[radius] = grid;
     return grid;
   }
 
-  planEnemyPath(enemy) {
-    const grid = this.getNavGrid(enemy.radius);
-    const sc = clamp(Math.floor(enemy.x / REACH_CELL), 0, grid.cols - 1);
-    const sr = clamp(Math.floor(enemy.y / REACH_CELL), 0, grid.rows - 1);
-    const gc = clamp(Math.floor(this.player.x / REACH_CELL), 0, grid.cols - 1);
-    const gr = clamp(Math.floor(this.player.y / REACH_CELL), 0, grid.rows - 1);
-    const startIdx = sr * grid.cols + sc;
-    const goalIdx = gr * grid.cols + gc;
-    if (grid.blocked[goalIdx] || grid.blocked[startIdx]) return null;
-    if (startIdx === goalIdx) return null;
-    const size = grid.cols * grid.rows;
-    const gScore = new Float32Array(size).fill(Infinity);
-    const cameFrom = new Int32Array(size).fill(-1);
-    const closed = new Uint8Array(size);
-    gScore[startIdx] = 0;
-    const h = (c, r) => (Math.abs(c - gc) + Math.abs(r - gr)) * REACH_CELL;
-    const open = [{ idx: startIdx, f: h(sc, sr) }];
-    while (open.length) {
-      let best = 0;
-      for (let i = 1; i < open.length; i++) { if (open[i].f < open[best].f) best = i; }
-      const node = open[best];
-      if (open.length > 1) { open[best] = open[open.length - 1]; open.pop(); } else { open.pop(); }
-      const cidx = node.idx;
-      if (closed[cidx]) continue;
-      if (cidx === goalIdx) {
-        const path = [];
-        for (let ci = goalIdx; ci !== -1; ci = cameFrom[ci]) {
-          const c = ci % grid.cols;
-          const r = (ci / grid.cols) | 0;
-          path.push({ x: c * REACH_CELL + REACH_CELL / 2, y: r * REACH_CELL + REACH_CELL / 2 });
-        }
-        path.reverse();
-        return this.smoothPath(path, enemy.radius);
+  *planEnemyPath(enemy, target) {
+    const grid = yield* this.getNavGrid(enemy.radius);
+    const point = (idx) => ({ x: (idx % grid.cols) * grid.cell + grid.cell / 2, y: Math.floor(idx / grid.cols) * grid.cell + grid.cell / 2 });
+    let startIdx = -1;
+    let startDistance = Infinity;
+    const sc = clamp(Math.floor(enemy.x / grid.cell), 0, grid.cols - 1);
+    const sr = clamp(Math.floor(enemy.y / grid.cell), 0, grid.rows - 1);
+    const center = point(sr * grid.cols + sc);
+    const offset = Math.max(Math.abs(enemy.x - center.x), Math.abs(enemy.y - center.y));
+    for (let ring = 0; ring < Math.max(grid.cols, grid.rows); ring += 1) {
+      yield;
+      const candidates = [];
+      for (let c = sc - ring; c <= sc + ring; c += 1) {
+        candidates.push([c, sr - ring]);
+        if (ring) candidates.push([c, sr + ring]);
       }
-      closed[cidx] = 1;
-      const cc = cidx % grid.cols;
-      const cr = (cidx / grid.cols) | 0;
-      const nextG = gScore[cidx] + REACH_CELL;
-      for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-        const nc = cc + dc;
-        const nr = cr + dr;
+      for (let r = sr - ring + 1; r < sr + ring; r += 1) candidates.push([sc - ring, r], [sc + ring, r]);
+      for (let i = 0; i < candidates.length; i += 1) {
+        if (i % 32 === 0) yield;
+        const [c, r] = candidates[i];
+        if (c < 0 || c >= grid.cols || r < 0 || r >= grid.rows) continue;
+        const idx = r * grid.cols + c;
+        if (grid.blocked[idx]) continue;
+        const p = point(idx);
+        const distance = Math.hypot(p.x - enemy.x, p.y - enemy.y);
+        if (distance >= startDistance || !this.canEnemyTravel(enemy.x, enemy.y, p.x, p.y, enemy.radius)) continue;
+        startIdx = idx;
+        startDistance = distance;
+      }
+      if (startDistance <= (ring + 0.5) * grid.cell - offset) break;
+    }
+    if (startIdx === -1) return { path: [], reached: false };
+    const gScore = new Float64Array(grid.blocked.length).fill(Infinity);
+    const cameFrom = new Int32Array(grid.blocked.length).fill(-1);
+    const closed = new Uint8Array(grid.blocked.length);
+    const h = (idx) => { const p = point(idx); return Math.hypot(p.x - target.x, p.y - target.y); };
+    const open = [];
+    const push = (node) => {
+      let i = open.length;
+      open.push(node);
+      while (i > 0) {
+        const parent = (i - 1) >> 1;
+        if (open[parent].f <= node.f) break;
+        open[i] = open[parent];
+        i = parent;
+      }
+      open[i] = node;
+    };
+    const pop = () => {
+      const node = open[0];
+      const last = open.pop();
+      if (open.length) {
+        let i = 0;
+        while (i * 2 + 1 < open.length) {
+          let child = i * 2 + 1;
+          if (child + 1 < open.length && open[child + 1].f < open[child].f) child += 1;
+          if (last.f <= open[child].f) break;
+          open[i] = open[child];
+          i = child;
+        }
+        open[i] = last;
+      }
+      return node;
+    };
+    gScore[startIdx] = startDistance;
+    push({ idx: startIdx, f: startDistance + h(startIdx) });
+    const directions = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+    let closest = startIdx;
+    let reached = false;
+    let expanded = 0;
+    while (open.length) {
+      if (expanded++ % 16 === 0) yield;
+      const { idx } = pop();
+      if (closed[idx]) continue;
+      closed[idx] = 1;
+      if (h(idx) < h(closest)) closest = idx;
+      const from = point(idx);
+      if (h(idx) <= grid.cell * 1.5 && this.canEnemyTravel(from.x, from.y, target.x, target.y, enemy.radius)) {
+        closest = idx;
+        reached = true;
+        break;
+      }
+      const col = idx % grid.cols;
+      const row = Math.floor(idx / grid.cols);
+      for (let d = 0; d < directions.length; d += 1) {
+        const [dc, dr] = directions[d];
+        const nc = col + dc;
+        const nr = row + dr;
         if (nc < 0 || nc >= grid.cols || nr < 0 || nr >= grid.rows) continue;
-        const nidx = nr * grid.cols + nc;
-        if (grid.blocked[nidx] || closed[nidx]) continue;
-        if (nextG >= gScore[nidx]) continue;
-        gScore[nidx] = nextG;
-        cameFrom[nidx] = cidx;
-        open.push({ idx: nidx, f: nextG + h(nc, nr) });
+        const next = nr * grid.cols + nc;
+        if (grid.blocked[next] || closed[next]) continue;
+        const cost = gScore[idx] + grid.cell * Math.hypot(dc, dr);
+        if (cost >= gScore[next]) continue;
+        const edge = idx * 8 + d;
+        if (grid.edges[edge] === -1) {
+          const to = point(next);
+          grid.edges[edge] = this.canEnemyTravel(from.x, from.y, to.x, to.y, enemy.radius) ? 1 : 0;
+        }
+        if (!grid.edges[edge]) continue;
+        gScore[next] = cost;
+        cameFrom[next] = idx;
+        push({ idx: next, f: cost + h(next) });
       }
     }
-    return null;
+    if (!reached && h(closest) >= Math.hypot(enemy.x - target.x, enemy.y - target.y) - 1) return { path: [], reached: false };
+    const path = [];
+    for (let idx = closest; idx !== -1; idx = cameFrom[idx]) {
+      if (path.length % 64 === 0) yield;
+      path.push(point(idx));
+    }
+    path.push({ x: enemy.x, y: enemy.y });
+    path.reverse();
+    if (reached) path.push({ x: target.x, y: target.y });
+    return { path: yield* this.smoothPath(path, enemy.radius), reached };
   }
 
-  smoothPath(path, radius) {
+  *smoothPath(path, radius) {
     if (path.length <= 2) return path;
-    const rp = radius + 5;
     const result = [path[0]];
     let anchor = 0;
-    for (let i = 1; i < path.length - 1; i += 1) {
-      const from = path[anchor];
-      const to = path[i + 1];
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 15));
-      let blocked = false;
-      for (let s = 1; s <= steps; s += 1) {
-        const px = from.x + dx * s / steps;
-        const py = from.y + dy * s / steps;
-        for (let oi = 0; oi < this.obstacles.length; oi += 1) {
-          if (distanceToRect(px, py, this.obstacles[oi]) < rp) { blocked = true; break; }
-        }
-        if (blocked) break;
+    let checks = 0;
+    while (anchor < path.length - 1) {
+      let next = path.length - 1;
+      while (next > anchor + 1) {
+        if (checks++ % 16 === 0) yield;
+        if (this.canEnemyTravel(path[anchor].x, path[anchor].y, path[next].x, path[next].y, radius)) break;
+        next -= 1;
       }
-      if (blocked) { result.push(path[i]); anchor = i; }
+      result.push(path[next]);
+      anchor = next;
     }
-    result.push(path[path.length - 1]);
     return result;
   }
 
   steerToPoint(enemy, tx, ty, dt) {
-    const tdx = tx - enemy.x;
-    const tdy = ty - enemy.y;
-    const tdist = Math.max(0.001, Math.hypot(tdx, tdy));
-    const baseX = tdx / tdist;
-    const baseY = tdy / tdist;
-    const baseAngle = Math.atan2(baseY, baseX);
-    const lookahead = Math.min(96, 52 + enemy.speed * 0.22);
-    const clearance = enemy.radius + 5;
-    let bestAngle = baseAngle;
-    let bestScore = Infinity;
-    for (const offset of [0, 0.28, -0.28, 0.55, -0.55, 0.82, -0.82]) {
-      const angle = baseAngle + offset;
-      const ca = Math.cos(angle);
-      const sa = Math.sin(angle);
-      let worstClear = Infinity;
-      for (let step = 1; step <= 3; step += 1) {
-        const px = enemy.x + ca * lookahead * step / 3;
-        const py = enemy.y + sa * lookahead * step / 3;
-        for (const obs of this.obstacles) {
-          const d = distanceToRect(px, py, obs) - clearance;
-          if (d < worstClear) worstClear = d;
-        }
-      }
-      const angleCost = Math.abs(offset) / Math.PI * 0.5;
-      const collisionPenalty = worstClear < 0 ? 2.5 + (-worstClear) * 0.06 : 0;
-      const marginCost = worstClear >= 0 ? Math.max(0, 1 - worstClear / 12) * 0.15 : 0;
-      const score = angleCost + collisionPenalty + marginCost;
-      if (score < bestScore) { bestScore = score; bestAngle = angle; }
-    }
-    return { nx: Math.cos(bestAngle), ny: Math.sin(bestAngle) };
+    const dx = tx - enemy.x;
+    const dy = ty - enemy.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 0.001 || !this.canEnemyTravel(enemy.x, enemy.y, tx, ty, enemy.radius)) return { nx: 0, ny: 0 };
+    const steer = this.orbiters.length ? this.steerAroundObstacles(enemy, dx / distance, dy / distance, dt) : { nx: dx / distance, ny: dy / distance };
+    const scale = distance / Math.max(distance, enemy.speed * dt);
+    return { nx: steer.nx * scale, ny: steer.ny * scale };
   }
 
-  getEnemyMoveTarget(enemy, dt) {
-    if (this.map.id === "gravity") return this.getEnemyPursuitTarget(enemy, dt);
-    if (this.obstacles.length === 0 || this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, enemy.radius + 14)) {
+  getEnemyMoveTarget(enemy, dt, goal = this.player) {
+    if (this.map.id === "gravity" && goal === this.player) return this.getEnemyPursuitTarget(enemy, dt);
+    if (enemy._navObstacles !== this.obstacles) {
+      enemy._navObstacles = this.obstacles;
       enemy._navPath = null;
-      return this.player;
+      enemy._navRequest = null;
     }
-    if (!enemy._navPath || enemy._navTimer <= 0) {
-      enemy._navPath = this.planEnemyPath(enemy);
-      enemy._navIdx = enemy._navPath && enemy._navPath.length > 1 ? 1 : 0;
-      enemy._navTimer = 0.35;
+    if (this.canEnemyTravel(enemy.x, enemy.y, goal.x, goal.y, enemy.radius)) {
+      enemy._navPath = null;
+      enemy._navRequest = null;
+      enemy._navDirty = false;
+      return goal;
     }
-    enemy._navTimer -= dt;
-    if (enemy._navPath && enemy._navIdx < enemy._navPath.length) {
-      const wp = enemy._navPath[enemy._navIdx];
-      if ((wp.x - enemy.x) ** 2 + (wp.y - enemy.y) ** 2 < 576) enemy._navIdx += 1;
-      if (enemy._navIdx < enemy._navPath.length) return enemy._navPath[enemy._navIdx];
+    const path = enemy._navPath;
+    let tailBlocked = false;
+    if (enemy._navReached && path?.length > 1) {
+      const last = path.length - 1;
+      if (path[last].x !== goal.x || path[last].y !== goal.y) {
+        const from = enemy._navIdx >= last ? enemy : path[last - 1];
+        if (this.canEnemyTravel(from.x, from.y, goal.x, goal.y, enemy.radius)) path[last] = { x: goal.x, y: goal.y };
+        else tailBlocked = true;
+      }
     }
-    return this.player;
+    let waypoint = path?.[enemy._navIdx];
+    while (waypoint && Math.hypot(waypoint.x - enemy.x, waypoint.y - enemy.y) < 3) {
+      const next = path[enemy._navIdx + 1];
+      if (next && !this.canEnemyTravel(enemy.x, enemy.y, next.x, next.y, enemy.radius)) break;
+      enemy._navIdx += 1;
+      waypoint = next;
+    }
+    const blocked = waypoint && !this.canEnemyTravel(enemy.x, enemy.y, waypoint.x, waypoint.y, enemy.radius);
+    const displaced = !waypoint && enemy._navStop && Math.hypot(enemy.x - enemy._navStop.x, enemy.y - enemy._navStop.y) > 24;
+    const goalDistance = enemy._navGoal ? Math.hypot(goal.x - enemy._navGoal.x, goal.y - enemy._navGoal.y) : Infinity;
+    const failedGoalChanged = !enemy._navReached && goalDistance >= 1 && this.runTime >= (enemy._navRetryAt || 0);
+    if (!path || blocked || displaced || tailBlocked || goalDistance > 96 || failedGoalChanged || enemy._navDirty) {
+      if (!enemy._navRequest) {
+        enemy._navRequest = { enemy, goal: { x: goal.x, y: goal.y }, obstacles: this.obstacles };
+        this._navQueue.push(enemy._navRequest);
+      }
+    }
+    if (enemy._navRequest) {
+      enemy._navRequest.waiting = !!blocked || !waypoint;
+      enemy._navRequest.latestGoal = { x: goal.x, y: goal.y };
+      if (!enemy._navRequest.iterator) enemy._navRequest.goal = enemy._navRequest.latestGoal;
+    }
+    return !blocked && waypoint ? waypoint : enemy;
+  }
+
+  processNavQueue() {
+    const deadline = performance.now() + 2;
+    for (let slices = 0; slices < 128 && performance.now() < deadline; slices += 1) {
+      if (!this._navJob?.waiting) {
+        const priority = this._navQueue.findIndex((request) => request.waiting && !request.enemy.dead
+          && request.enemy._navRequest === request && request.obstacles === this.obstacles);
+        if (priority !== -1) {
+          const [next] = this._navQueue.splice(priority, 1);
+          if (this._navJob) this._navQueue.unshift(this._navJob);
+          this._navJob = next;
+        }
+      }
+      if (!this._navJob) this._navJob = this._navQueue.shift();
+      const job = this._navJob;
+      if (!job) return;
+      const enemy = job.enemy;
+      if (enemy.dead || enemy._navRequest !== job || job.obstacles !== this.obstacles) {
+        this._navJob = null;
+        continue;
+      }
+      if (job.iterator && this._navCache?.[enemy.radius] && Math.hypot(job.latestGoal.x - job.goal.x, job.latestGoal.y - job.goal.y) > 96) {
+        enemy._navRequest = { enemy, goal: job.latestGoal, latestGoal: job.latestGoal, waiting: job.waiting, obstacles: this.obstacles };
+        this._navQueue.push(enemy._navRequest);
+        this._navJob = null;
+        continue;
+      }
+      if (!job.iterator) {
+        job.start = { x: enemy.x, y: enemy.y, radius: enemy.radius };
+        job.iterator = this.planEnemyPath(job.start, job.goal);
+      }
+      const result = job.iterator.next();
+      if (!result.done) continue;
+      this._navJob = null;
+      enemy._navRequest = null;
+      const { path, reached } = result.value;
+      let index = path.length;
+      for (let i = path.length - 1; i >= 1; i -= 1) {
+        if (!this.canEnemyTravel(enemy.x, enemy.y, path[i].x, path[i].y, enemy.radius)) continue;
+        index = i;
+        break;
+      }
+      if ((path.length && index === path.length) || (!path.length && Math.hypot(enemy.x - job.start.x, enemy.y - job.start.y) > 24)) {
+        enemy._navDirty = true;
+        continue;
+      }
+      enemy._navPath = path;
+      enemy._navIdx = index;
+      enemy._navGoal = job.goal;
+      enemy._navStop = path.at(-1) || job.start;
+      enemy._navReached = reached;
+      enemy._navRetryAt = this.runTime + 0.4;
+      enemy._navDirty = false;
+    }
   }
 
   steerAroundObstacles(enemy, nx, ny, dt) {
-    if (this.obstacles.length === 0 && this.orbiters.length === 0) return { nx, ny };
-    let baseAngle;
-    if (this.obstacles.length > 0) {
-      const clear = this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, enemy.radius + 14);
-      if (clear) {
-        baseAngle = Math.atan2(ny, nx);
-      } else {
-        const flow = this.flowDirection(enemy.x, enemy.y);
-        baseAngle = flow ? Math.atan2(flow.ny, flow.nx) : Math.atan2(ny, nx);
-      }
-    } else {
-      baseAngle = Math.atan2(ny, nx);
-    }
-    if (enemy.smoothAngle === undefined) {
-      enemy.smoothAngle = baseAngle;
-    } else {
-      let difference = baseAngle - enemy.smoothAngle;
-      difference = Math.atan2(Math.sin(difference), Math.cos(difference));
-      enemy.smoothAngle += difference * Math.min(1, dt * 9);
-    }
-    const base = enemy.smoothAngle;
-    const lookahead = Math.min(96, 52 + enemy.speed * 0.22);
-    const clearance = enemy.radius + 10;
-    let bestAngle = base;
-    let bestScore = Infinity;
+    if (Math.hypot(nx, ny) < 0.001) return { nx: 0, ny: 0 };
+    const base = Math.atan2(ny, nx);
+    const lookahead = Math.max(enemy.speed * dt, Math.min(30, enemy.speed * 0.15));
     for (const offset of [0, 0.28, -0.28, 0.55, -0.55, 0.82, -0.82, 1.1, -1.1, 1.4, -1.4]) {
-      const angle = base + offset;
-      const ca = Math.cos(angle);
-      const sa = Math.sin(angle);
-      let minClear = Infinity;
-      for (let step = 1; step <= 4; step += 1) {
-        const px = enemy.x + ca * lookahead * step / 4;
-        const py = enemy.y + sa * lookahead * step / 4;
-        for (const obstacle of this.obstacles) {
-          const distance = distanceToRect(px, py, obstacle) - clearance;
-          if (distance < minClear) minClear = distance;
-        }
-        for (const orbiter of this.orbiters) {
-          const position = this.orbiterPosition(orbiter);
-          const distance = Math.hypot(px - position.x, py - position.y) - orbiter.radius - clearance;
-          if (distance < minClear) minClear = distance;
-        }
-      }
-      const angleCost = Math.abs(offset) / Math.PI * 0.55;
-      const collisionCost = minClear < 0 ? 2.4 + (-minClear) * 0.07 : 0;
-      const marginCost = minClear >= 0 ? Math.max(0, 1 - minClear / 14) * 0.18 : 0;
-      const score = angleCost + collisionCost + marginCost;
-      if (score < bestScore) {
-        bestScore = score;
-        bestAngle = angle;
-      }
+      const x = Math.cos(base + offset);
+      const y = Math.sin(base + offset);
+      const tx = enemy.x + x * lookahead;
+      const ty = enemy.y + y * lookahead;
+      if (!this.canEnemyTravel(enemy.x, enemy.y, tx, ty, enemy.radius)) continue;
+      if (this.orbiters.some((orbiter) => {
+        const p = this.orbiterPosition(orbiter);
+        const clearance = enemy.radius + orbiter.radius + 1;
+        const dx = enemy.x - p.x;
+        const dy = enemy.y - p.y;
+        if (dx * dx + dy * dy <= clearance * clearance && dx * x + dy * y >= 0) return false;
+        return segmentHitsCircle(enemy.x, enemy.y, tx, ty, p.x, p.y, clearance);
+      })) continue;
+      return { nx: x, ny: y };
     }
-    return { nx: Math.cos(bestAngle), ny: Math.sin(bestAngle) };
+    return { nx: 0, ny: 0 };
+  }
+
+  constrainEnemyMove(enemy, fromX, fromY) {
+    const toX = clamp(enemy.x, enemy.radius + 14, this.world.width - enemy.radius - 14);
+    const toY = clamp(enemy.y, enemy.radius + 14, this.world.height - enemy.radius - 14);
+    enemy.x = toX;
+    enemy.y = toY;
+    if (this.hasLineOfSight(fromX, fromY, toX, toY, enemy.radius - 0.001)) return;
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 12; i += 1) {
+      const mid = (low + high) / 2;
+      if (this.hasLineOfSight(fromX, fromY, fromX + (toX - fromX) * mid, fromY + (toY - fromY) * mid, enemy.radius - 0.001)) low = mid;
+      else high = mid;
+    }
+    enemy.x = fromX + (toX - fromX) * low;
+    enemy.y = fromY + (toY - fromY) * low;
+    enemy._navDirty = true;
+    if (enemy.type === "dasher" && enemy.state === "dash") {
+      enemy.state = "hunt";
+      enemy.cooldown = 2.2;
+    }
   }
 
   isOnSafePlatform(entity) {
@@ -1937,9 +2127,9 @@ ui.customMapEntry.addEventListener("click", () => {
     this.obstacles = [];
     this.reachGrid = null;
     this.customUnplayable = false;
-    this.flow = null;
-    this.flowTimer = 0;
     this._navCache = null;
+    this._navQueue = [];
+    this._navJob = null;
     this.safePlatforms = [];
     this.orbiters = [];
     this.wells = [];
@@ -2837,13 +3027,6 @@ ui.customMapEntry.addEventListener("click", () => {
     if (this.state !== "playing") return;
     this.updatePlayer(dt);
     this.updateSpawning(dt);
-    if (this.obstacles.length > 0) {
-      this.flowTimer -= dt;
-      if (this.flowTimer <= 0) {
-        this.buildFlowField();
-        this.flowTimer = 0.25;
-      }
-    }
     this.updateEnemies(dt);
     if (this.state !== "playing") return;
     this.updateBullets(dt);
@@ -2876,10 +3059,20 @@ ui.customMapEntry.addEventListener("click", () => {
     const movement = this.input.movement();
     const touchAiming = this.input.touchMode && this.input.pointer.down;
     const belt = this.belts.find((lane) => player.x >= lane.x && player.x <= lane.x + lane.width);
+    let dashSqueeze = false;
     if (player.dashTime > 0) {
+      const dashX = player.vx;
+      const dashY = player.vy;
       player.dashTime -= dt;
-      player.x += player.vx * dt;
-      player.y += player.vy * dt;
+      if (this.hasLineOfSight(player.x, player.y, player.x + dashX * dt, player.y + dashY * dt, player.radius - 0.001)) {
+        player.x += dashX * dt;
+        player.y += dashY * dt;
+      } else if (this.gapWidthAhead(player, dashX, dashY) >= player.radius) {
+        this.movePlayer(player, dashX * dt, dashY * dt, player.radius / 2);
+        dashSqueeze = true;
+      } else {
+        this.movePlayer(player, dashX * dt, dashY * dt, player.radius - 0.001);
+      }
       player.trailTimer -= dt;
       if (player.trailTimer <= 0) {
         player.trailTimer = 0.025;
@@ -2888,20 +3081,20 @@ ui.customMapEntry.addEventListener("click", () => {
       if (player.dashTime <= 0) {
         player.vx *= 0.25;
         player.vy *= 0.25;
+        this.escapeNarrowGap(player, dashX, dashY);
       }
     } else {
       const blend = 1 - Math.exp(-18 * dt);
       const moveSpeed = player.speed * (player.buffs.engine > 0 ? 1.6 : 1);
       player.vx += (movement.x * moveSpeed - player.vx) * blend;
       player.vy += (movement.y * moveSpeed - player.vy) * blend;
-      player.x += player.vx * dt;
-      player.y += player.vy * dt;
+      this.movePlayer(player, player.vx * dt, player.vy * dt, player.radius - 0.001);
     }
     if (belt) player.y += STORM_BELT_SPEED * belt.direction * dt;
     this.applyGravity(player, dt);
     player.x = clamp(player.x, player.radius + 16, this.world.width - player.radius - 16);
     player.y = clamp(player.y, player.radius + 16, this.world.height - player.radius - 16);
-    this.resolveObstacles(player, player.radius);
+    this.resolveObstacles(player, dashSqueeze ? player.radius / 2 : player.radius);
     this.checkPortals(player);
     if (this.input.pointer.active && (!this.input.touchMode || touchAiming)) {
       const pointer = this.screenToWorld(this.input.pointer.x, this.input.pointer.y);
@@ -3161,21 +3354,21 @@ ui.customMapEntry.addEventListener("click", () => {
         const ny = targetDy / targetDistance;
         if (enemy.type === "chaser" || enemy.type === "splitter" || enemy.type === "mite") {
           const steer = usePathSteer ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, nx, ny, dt);
-          const wobble = enemy.type === "splitter" && this.map.id !== "gravity" ? Math.sin(this.runTime * 2 + enemy.id) * 0.35 : 0;
+          const wobble = enemy.type === "splitter" && !usePathSteer && this.map.id !== "gravity" ? Math.sin(this.runTime * 2 + enemy.id) * 0.35 : 0;
           enemy.x += (steer.nx - steer.ny * wobble) * enemy.speed * dt * slowFactor;
           enemy.y += (steer.ny + steer.nx * wobble) * enemy.speed * dt * slowFactor;
         } else if (enemy.type === "shooter") {
+          const firingClear = this.hasLineOfSight(enemy.x, enemy.y, player.x, player.y, 10);
           let direction = 0;
-          if (distance > 270) direction = 1;
+          if ((usePathSteer && !firingClear) || distance > 270) direction = 1;
           else if (distance < 175) direction = -1;
-          const baseX = direction === 1 ? nx : dx / distance;
-          const baseY = direction === 1 ? ny : dy / distance;
-          const steer = direction === 0 ? { nx: 0, ny: 0 } : (usePathSteer ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, baseX, baseY, dt));
+          const followPath = usePathSteer && direction === 1;
+          const steer = direction === 0 ? { nx: 0, ny: 0 } : (followPath ? this.steerToPoint(enemy, target.x, target.y, dt) : this.steerAroundObstacles(enemy, dx / distance * direction, dy / distance * direction, dt));
           const sx = steer.nx;
           const sy = steer.ny;
-          const strafe = this.map.id === "gravity" && direction === 1 ? 0 : Math.sin(this.runTime * 1.4 + enemy.id) * 0.6;
-          enemy.x += (sx * direction - sy * strafe) * enemy.speed * dt * slowFactor;
-          enemy.y += (sy * direction + sx * strafe) * enemy.speed * dt * slowFactor;
+          const strafe = followPath || (this.map.id === "gravity" && direction === 1) ? 0 : Math.sin(this.runTime * 1.4 + enemy.id) * 0.6;
+          enemy.x += (sx - sy * strafe) * enemy.speed * dt * slowFactor;
+          enemy.y += (sy + sx * strafe) * enemy.speed * dt * slowFactor;
           enemy.attackTimer -= dt;
           if (enemy.attackTimer <= 0 && distance < 580 && this.hasLineOfSight(enemy.x, enemy.y, this.player.x, this.player.y, 10)) {
             this.fireEnemyBullet(enemy, Math.atan2(dy, dx), 205, 5, enemy.damage);
@@ -3189,7 +3382,7 @@ ui.customMapEntry.addEventListener("click", () => {
             enemy.cooldown -= dt;
             enemy.faceAngle = rotateToward(enemy.faceAngle, Math.atan2(dy, dx), 9 * dt);
             const clearCharge = this.map.id !== "gravity" || this.portals.every((portal, index) => index === enemy.navigationPortal || (enemy.portalCooldown > 0 && index === enemy.portalExitIndex) || !segmentHitsCircle(enemy.x, enemy.y, player.x, player.y, portal.x, portal.y, enemy.radius + 28));
-            if (enemy.cooldown <= 0 && distance < 370 && clearCharge) {
+            if (enemy.cooldown <= 0 && distance < 370 && clearCharge && this.canEnemyTravel(enemy.x, enemy.y, player.x, player.y, enemy.radius)) {
               enemy.state = "telegraph";
               enemy.stateTime = 0.65;
               enemy.aim = Math.atan2(dy, dx);
@@ -3216,11 +3409,12 @@ ui.customMapEntry.addEventListener("click", () => {
         }
       }
       this.applyGravity(enemy, dt);
-      enemy.x = clamp(enemy.x, enemy.radius + 14, this.world.width - enemy.radius - 14);
-      enemy.y = clamp(enemy.y, enemy.radius + 14, this.world.height - enemy.radius - 14);
+      this.constrainEnemyMove(enemy, enemy.prevX, enemy.prevY);
       this.resolveObstacles(enemy, enemy.radius);
       this.avoidEnemyPortals(enemy);
       this.checkPortals(enemy);
+      const contactX = enemy.x;
+      const contactY = enemy.y;
       const touching = segmentHitsCircle(player.prevX, player.prevY, player.x, player.y, enemy.x, enemy.y, player.radius + enemy.radius);
       if (touching && !enemy.dead) {
         if (enemy.type === "prism") {
@@ -3251,6 +3445,7 @@ ui.customMapEntry.addEventListener("click", () => {
           enemy.x += Math.cos(angle) * 20;
           enemy.y += Math.sin(angle) * 20;
         }
+        this.constrainEnemyMove(enemy, contactX, contactY);
         if (this.state !== "playing" || this.pendingVictory) break;
       }
       if (!enemy.dead && player.drones > 0 && enemy.spawnIn <= 0) {
@@ -3278,10 +3473,16 @@ ui.customMapEntry.addEventListener("click", () => {
         const minimum = (a.radius + b.radius) * 0.72;
         if (distance > 0 && distance < minimum) {
           const push = (minimum - distance) * 0.25;
+          const ax = a.x;
+          const ay = a.y;
+          const bx = b.x;
+          const by = b.y;
           a.x -= dx / distance * push;
           a.y -= dy / distance * push;
           b.x += dx / distance * push;
           b.y += dy / distance * push;
+          this.constrainEnemyMove(a, ax, ay);
+          this.constrainEnemyMove(b, bx, by);
         }
       }
     }
@@ -3289,6 +3490,7 @@ ui.customMapEntry.addEventListener("click", () => {
       this.resolveObstacles(enemy, enemy.radius);
       this.avoidEnemyPortals(enemy);
     }
+    this.processNavQueue();
   }
 
   updatePrism(enemy, dt, slowFactor) {
@@ -3306,10 +3508,8 @@ ui.customMapEntry.addEventListener("click", () => {
       enemy.wanderX = clamp(enemy.x + random(-420, 420), enemy.radius + 30, this.world.width - enemy.radius - 30);
       enemy.wanderY = clamp(enemy.y + random(-420, 420), enemy.radius + 30, this.world.height - enemy.radius - 30);
     }
-    const dx = enemy.wanderX - enemy.x;
-    const dy = enemy.wanderY - enemy.y;
-    const distance = Math.max(0.001, Math.hypot(dx, dy));
-    const steer = this.steerAroundObstacles(enemy, dx / distance, dy / distance, dt);
+    const target = this.getEnemyMoveTarget(enemy, dt, { x: enemy.wanderX, y: enemy.wanderY });
+    const steer = this.steerToPoint(enemy, target.x, target.y, dt);
     enemy.x += steer.nx * enemy.speed * dt * slowFactor;
     enemy.y += steer.ny * enemy.speed * dt * slowFactor;
   }
