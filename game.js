@@ -753,6 +753,7 @@ class Game {
     } catch {}
     this.endlessRound = 0;
     this.endlessHpMul = 1;
+    this.endlessDmgMul = 1;
     this.endlessSpdMul = 1;
     this.endlessMapIndex = 0;
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
@@ -1727,8 +1728,6 @@ class Game {
     this.inBossArena = true;
     this.map = BOSS_ARENA;
     this.createMap();
-    this.player.x = this.world.width / 2;
-    this.player.y = this.world.height / 2;
     this.player.prevX = this.player.x;
     this.player.prevY = this.player.y;
     this.player.vx = 0;
@@ -1970,6 +1969,7 @@ class Game {
   startNextRound() {
     this.endlessRound += 1;
     this.endlessHpMul *= 1 + this.endless.scale / 100;
+    this.endlessDmgMul *= 1 + (this.endless.scale / 100) * 0.7;
     this.endlessSpdMul *= 1 + this.endlessSpeedBonus() / 100;
     this.audio.stopLaserPrep();
     const player = this.player;
@@ -1987,8 +1987,6 @@ class Game {
     this.powerupPointIndex = 0;
     this.powerupToastTime = 0;
     ui.powerupToast.hidden = true;
-    player.x = this.world.width / 2;
-    player.y = this.world.height / 2;
     player.prevX = player.x;
     player.prevY = player.y;
     player.vx = 0;
@@ -2096,6 +2094,7 @@ class Game {
     this.rings = [];
     this.endlessRound = 0;
     this.endlessHpMul = 1;
+    this.endlessDmgMul = 1;
     this.endlessSpdMul = 1;
     if (this.mode === "endless") {
       this.endlessRound = 1;
@@ -2514,6 +2513,7 @@ class Game {
       }
     }
     const scale = type === "boss" || type === "mite" || type === "prism" ? 1 : 1 + (this.wave - 1) * 0.13;
+    const enemyHp = Math.round(stats.hp * scale * this.endlessHpMul);
     const enemy = {
       id: this.nextId++,
       type,
@@ -2531,10 +2531,10 @@ class Game {
       vx: 0,
       vy: 0,
       radius: stats.radius,
-      hp: stats.hp * scale * this.endlessHpMul,
-      maxHp: stats.hp * scale * this.endlessHpMul,
+      hp: enemyHp,
+      maxHp: enemyHp,
       speed: stats.speed * (1 + Math.max(0, this.wave - 1) * 0.035) * this.endlessSpdMul,
-      damage: stats.damage,
+      damage: Math.round(stats.damage * this.endlessDmgMul),
       xp: stats.xp,
       score: stats.score,
       color: stats.color,
@@ -2569,8 +2569,8 @@ class Game {
   makeElite(enemy) {
     enemy.elite = true;
     enemy.radius *= 1.18;
-    enemy.hp *= 1.8;
-    enemy.maxHp *= 1.8;
+    enemy.hp = Math.round(enemy.hp * 1.8);
+    enemy.maxHp = Math.round(enemy.maxHp * 1.8);
     enemy.xp += 2;
     enemy.score *= 2;
     this.spawnRing(enemy.x, enemy.y, enemy.radius + 8, enemy.radius + 40, "#ffd166", 0.6);
@@ -2773,7 +2773,7 @@ class Game {
       if (other.dead || other === enemy || other.type === "prism" || other.spawnIn > 0) continue;
       if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, other.x, other.y, other.radius + 5)) this.damageEnemy(other, 60);
     }
-    if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) this.hurtPlayer(18);
+    if (segmentHitsCircle(enemy.x, enemy.y, endX, endY, this.player.x, this.player.y, this.player.radius + 5)) this.hurtPlayer(18 * this.endlessDmgMul);
     this.shake = Math.max(this.shake, 5);
     this.audio.laser();
   }
@@ -2809,21 +2809,22 @@ class Game {
 
   bossAttack(enemy) {
     const enraged = enemy.hp / enemy.maxHp < 0.5;
+    const dmgMul = this.endlessDmgMul;
     if (enemy.pendingAttack === 0) {
       const count = enraged ? 18 : 13;
       for (let i = 0; i < count; i += 1) {
-        this.fireEnemyBullet(enemy, enemy.attackCount * 0.19 + i * Math.PI * 2 / count, enraged ? 185 : 155, 5, 11);
+        this.fireEnemyBullet(enemy, enemy.attackCount * 0.19 + i * Math.PI * 2 / count, enraged ? 185 : 155, 5, Math.round(11 * dmgMul));
       }
     } else if (enemy.pendingAttack === 1) {
       const angle = Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x);
       const count = enraged ? 7 : 5;
       for (let i = 0; i < count; i += 1) {
-        this.fireEnemyBullet(enemy, angle + (i - (count - 1) / 2) * 0.12, 235, 5, 12);
+        this.fireEnemyBullet(enemy, angle + (i - (count - 1) / 2) * 0.12, 235, 5, Math.round(12 * dmgMul));
       }
     } else {
       const count = enraged ? 10 : 8;
       for (let i = 0; i < count; i += 1) {
-        this.fireEnemyBullet(enemy, i * Math.PI * 2 / count + 0.2, 145, 5, 10);
+        this.fireEnemyBullet(enemy, i * Math.PI * 2 / count + 0.2, 145, 5, Math.round(10 * dmgMul));
       }
       if (this.enemies.length < 11) {
         this.spawnEnemy("chaser", enemy.x - 62, enemy.y + 20);
@@ -2945,6 +2946,7 @@ class Game {
 
   damageEnemy(enemy, damage, source = "env") {
     if (enemy.dead) return;
+    damage = Math.round(damage);
     if (enemy.type === "prism") {
       if (source === "player") this.triggerPrismLaser(enemy, Math.atan2(this.player.y - enemy.y, this.player.x - enemy.x));
       return;
@@ -2975,11 +2977,14 @@ class Game {
       this.showAnnouncement("announce.bossDown", "announce.bossDownSub");
       this.audio.explode(0.55);
       this.audio.tone(330, 0.5, "sine", 0.035, 880);
+      const spread = enemy.radius * 1.35;
       for (let i = 0; i < 50; i += 1) {
+        const angle = random(0, Math.PI * 2);
+        const dist = Math.random() * spread;
         this.pickups.push({
           type: "xp",
-          x: enemy.x,
-          y: enemy.y,
+          x: enemy.x + Math.cos(angle) * dist,
+          y: enemy.y + Math.sin(angle) * dist,
           vx: random(-90, 90),
           vy: random(-90, 90),
           value: 1,
@@ -3015,6 +3020,7 @@ class Game {
   }
 
   hurtPlayer(amount, { continuous = false, ramming = false } = {}) {
+    amount = Math.round(amount);
     const player = this.player;
     if (this.state !== "playing" || player.buffs.shield > 0) return false;
     if (!ramming && ((!continuous && player.invulnerable > 0) || player.dashTime > 0)) return false;
