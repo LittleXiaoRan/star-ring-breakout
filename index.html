@@ -11,6 +11,7 @@
   <noscript><style>body{visibility:visible}</style></noscript>
   <script src="i18n.js" defer></script>
   <script src="game.js" defer></script>
+  <script src="editor.js" defer></script>
 </head>
 <body>
   <div id="app">
@@ -163,6 +164,67 @@
         </section>
       </div>
 
+      <div id="editor-overlay" class="editor-overlay" hidden>
+        <aside class="editor-side editor-side-left" aria-label="编辑工具" data-en-aria="Editor tools">
+          <div class="editor-topbar">
+            <button id="editor-exit-btn" class="editor-btn" type="button" data-en="Exit">退出</button>
+            <button id="editor-save-btn" class="editor-btn editor-btn-primary" type="button" data-en="Save">保存</button>
+          </div>
+          <div id="editor-tools" class="editor-tools" role="toolbar" aria-label="编辑工具" data-en-aria="Editor tools">
+            <button type="button" class="editor-tool" data-tool="select" data-en="Select">选择</button>
+            <button type="button" class="editor-tool" data-tool="place" data-en="Place">放置</button>
+            <button type="button" class="editor-tool" data-tool="erase" data-en="Erase">擦除</button>
+            <button type="button" class="editor-tool" id="editor-undo-btn" data-act="undo" disabled data-en="Undo">撤回</button>
+            <button type="button" class="editor-tool" id="editor-redo-btn" data-act="redo" disabled data-en="Redo">重做</button>
+          </div>
+        </aside>
+        <div class="editor-canvas-wrap">
+          <canvas id="editor-canvas" aria-label="自制星域编辑器" data-en-aria="Custom sector editor"></canvas>
+        </div>
+        <aside class="editor-side editor-side-right" aria-label="材料栏" data-en-aria="Materials">
+          <div id="editor-materials" class="editor-materials" role="toolbar" aria-label="材料栏" data-en-aria="Materials">
+            <button type="button" class="editor-material selected" data-mat="h"><i aria-hidden="true"></i><span data-en="Horizontal Bar">横条块</span></button>
+            <button type="button" class="editor-material" data-mat="v"><i aria-hidden="true"></i><span data-en="Vertical Bar">竖条块</span></button>
+          </div>
+        </aside>
+      </div>
+
+      <div id="custom-select-overlay" class="overlay custom-select-overlay" hidden>
+        <section class="panel map-panel custom-select-panel">
+          <div class="map-topbar">
+            <div id="custom-mode-toggle" class="mode-toggle" role="radiogroup" aria-label="游戏模式" data-en-aria="Game mode">
+              <div class="mode-option" role="radio" aria-checked="true" tabindex="0" data-mode="classic">
+                <span class="mode-name" data-en="Classic">经典模式</span>
+              </div>
+              <div class="mode-option" role="radio" aria-checked="false" tabindex="0" data-mode="endless">
+                <span class="mode-name" data-en="Endless">无尽模式</span>
+                <button id="custom-endless-gear-btn" class="gear-btn" type="button" aria-label="无尽模式设置" title="无尽模式设置" data-en-aria="Endless mode settings" data-en-title="Endless mode settings">⚙</button>
+              </div>
+            </div>
+          </div>
+          <p class="eyebrow">SELECT SECTOR</p>
+          <h2 data-en="Choose Custom Sector">选择自制星域</h2>
+          <p class="panel-subtitle" data-en="Different terrain and hazards — waves and upgrades stay the same">地形与危险机制不同，波次与强化规则一致</p>
+          <div id="custom-map-cards" class="map-cards"></div>
+          <p id="custom-empty" class="custom-empty" hidden data-en="No custom sectors yet — go back and use the Custom Sector entry at the top right to create your first map.">还没有自制星域——返回选择星域，点击右上角的「自制星域」创建第一张地图。</p>
+          <div class="map-actions">
+            <button id="custom-select-back-btn" class="secondary-btn" type="button" data-en="Back">返回</button>
+            <button id="custom-select-start-btn" class="primary-btn" type="button" data-en="Enter Sector">进入星域</button>
+          </div>
+        </section>
+      </div>
+
+      <div id="editor-dialog-overlay" class="overlay editor-dialog-overlay" hidden>
+        <section class="panel compact-panel editor-dialog-panel" role="dialog" aria-modal="true">
+          <p id="editor-dialog-eyebrow" class="eyebrow">CUSTOM SECTOR</p>
+          <h2 id="editor-dialog-title"></h2>
+          <p id="editor-dialog-text" class="panel-subtitle" hidden></p>
+          <input id="editor-dialog-input" type="text" maxlength="16" hidden>
+          <input id="editor-dialog-desc-input" type="text" maxlength="24" hidden>
+          <div id="editor-dialog-actions" class="editor-dialog-actions"></div>
+        </section>
+      </div>
+
       <div id="endless-settings-overlay" class="overlay endless-settings-overlay" hidden>
         <section class="panel compact-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="endless-settings-title">
           <p class="eyebrow">ENDLESS CONFIG</p>
@@ -191,6 +253,10 @@
               <button type="button" role="radio" aria-checked="true" data-endless-boss="every" data-en="Every Round">每关都打</button>
               <button type="button" role="radio" aria-checked="false" data-endless-boss="first" data-en="First Round Only">仅第1关</button>
             </div>
+          </div>
+          <div class="setting-row">
+            <div><strong data-en="Custom Sectors in Endless">无尽模式加入自制星域</strong><small data-en="Include custom sectors in the endless map pool">无尽模式的关卡地图池中加入自制星域</small></div>
+            <button id="endless-custom-toggle" class="sound-switch" type="button" role="switch" aria-checked="true" aria-label="无尽模式加入自制星域" data-en-aria="Custom sectors in Endless"><i aria-hidden="true"></i><span>开启</span></button>
           </div>
           <p class="endless-best"><span data-en="Farthest Round">最远抵达</span><strong id="endless-best-round">—</strong></p>
           <button id="endless-settings-close-btn" class="primary-btn" type="button" data-en="Done">完成</button>
@@ -243,6 +309,10 @@
           <div class="setting-row">
             <div><strong data-en="Unlimited Mode">无上限模式</strong><small data-en="Remove level caps from all stackable upgrades">取消所有可叠加技能的上限</small></div>
             <button id="settings-unlimited-toggle" class="sound-switch" type="button" role="switch" aria-checked="false" aria-label="无上限模式" data-en-aria="Unlimited mode"><i aria-hidden="true"></i><span>关闭</span></button>
+          </div>
+          <div class="setting-row">
+            <div><strong data-en="Custom Sectors in Classic">经典模式加入自制星域</strong><small data-en="Allow custom sectors to be played in Classic mode">允许在经典模式游玩自制星域</small></div>
+            <button id="settings-custom-toggle" class="sound-switch" type="button" role="switch" aria-checked="true" aria-label="经典模式加入自制星域" data-en-aria="Custom sectors in Classic"><i aria-hidden="true"></i><span>开启</span></button>
           </div>
           <div class="setting-row">
             <div><strong data-en="Language">语言</strong><small data-en="Interface language">界面显示语言</small></div>
@@ -521,14 +591,8 @@
           <button id="menu-btn" class="secondary-btn" type="button" data-en="Main Menu">返回主界面</button>
         </section>
       </div>
-
-      <div id="powerup-toast" class="powerup-toast" hidden>能量护盾 · 6 秒</div>
+<div id="powerup-toast" class="powerup-toast" hidden>能量护盾 · 6 秒</div>
     </main>
-
-    <footer class="game-footer">
-      <span><i class="mint-dot"></i><span data-en="Destroy enemies → Collect energy → Choose upgrades">击毁敌人 → 收集能量 → 选择强化</span></span>
-      <span data-en="P / ESC Pause">P / ESC 暂停</span>
-    </footer>
   </div>
   <div id="live-status" class="sr-only" aria-live="polite"></div>
   <script charset="UTF-8" id="LA_COLLECT" src="//sdk.51.la/js-sdk-pro.min.js" async onload="window.LA&&LA.init({id:'3RisH9y6dKrj6wRn',ck:'3RisH9y6dKrj6wRn'})"></script>

@@ -1,0 +1,1145 @@
+(() => {
+  "use strict";
+  const WORLD_WIDTH = 2400;
+  const WORLD_HEIGHT = 1600;
+  const BLOCKS = {
+    h: { width: 210, height: 48 },
+    v: { width: 210, height: 48, rot: 90 }
+  };
+  const HANDLE_OFFSET_PX = 30;
+  const SNAP = 30;
+  const ROT_SNAP = 15;
+  const REACH_CELL = 30;
+  const MIN_PLAYABLE_CELLS = 16;
+  const STORAGE_KEY = "star-ring-custom-maps";
+
+  function distToRect(x, y, rect) {
+    if (!rect.rot) {
+      const nearestX = x < rect.x ? rect.x : x > rect.x + rect.width ? rect.x + rect.width : x;
+      const nearestY = y < rect.y ? rect.y : y > rect.y + rect.height ? rect.y + rect.height : y;
+      return Math.hypot(x - nearestX, y - nearestY);
+    }
+    const hw = rect.width / 2;
+    const hh = rect.height / 2;
+    const dx = x - (rect.x + hw);
+    const dy = y - (rect.y + hh);
+    const rad = rect.rot * Math.PI / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const lx = dx * cos + dy * sin;
+    const ly = -dx * sin + dy * cos;
+    const nearestLX = lx < -hw ? -hw : lx > hw ? hw : lx;
+    const nearestLY = ly < -hh ? -hh : ly > hh ? hh : ly;
+    return Math.hypot(lx - nearestLX, ly - nearestLY);
+  }
+
+  const byId = (id) => document.getElementById(id);
+  const els = {
+    overlay: byId("editor-overlay"),
+    canvas: byId("editor-canvas"),
+    exit: byId("editor-exit-btn"),
+    save: byId("editor-save-btn"),
+    tools: byId("editor-tools"),
+    undo: byId("editor-undo-btn"),
+    redo: byId("editor-redo-btn"),
+    materials: byId("editor-materials"),
+    selectOverlay: byId("custom-select-overlay"),
+    cards: byId("custom-map-cards"),
+    empty: byId("custom-empty"),
+    startBtn: byId("custom-select-start-btn"),
+    back: byId("custom-select-back-btn"),
+    dialog: byId("editor-dialog-overlay"),
+    dialogEyebrow: byId("editor-dialog-eyebrow"),
+    dialogTitle: byId("editor-dialog-title"),
+    dialogText: byId("editor-dialog-text"),
+    dialogInput: byId("editor-dialog-input"),
+    descInput: byId("editor-dialog-desc-input"),
+    dialogActions: byId("editor-dialog-actions")
+  };
+
+  function loadMaps() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+      return Array.isArray(saved) ? saved.filter((entry) => entry && typeof entry === "object" && entry.id && typeof entry.name === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveMaps(maps) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(maps));
+    } catch {}
+  }
+
+  let toastTimer = 0;
+  function toast(message, color = "#64fbd2") {
+    const element = byId("powerup-toast");
+    element.textContent = message;
+    element.style.color = color;
+    element.style.borderColor = color;
+    element.hidden = false;
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => {
+      element.hidden = true;
+    }, 2200);
+  }
+
+  class MapEditor {
+    constructor() {
+      this.editorOpen = false;
+      this.selectOpen = false;
+      this.blocks = [];
+      this.nextBlockId = 1;
+      this.tool = "place";
+      this.material = "h";
+      this.selected = null;
+      this.group = [];
+      this.groupBounds = null;
+      this.past = [];
+      this.future = [];
+      this.dirty = false;
+      this.customSelectedId = null;
+      this.pointer = { x: -1, y: -1, inside: false };
+      this.drag = null;
+      this.dialogResolver = null;
+      this.context = els.canvas.getContext("2d");
+      this.width = 1;
+      this.height = 1;
+      this.dpr = 1;
+      this.scale = 1;
+      this.offsetX = 0;
+      this.offsetY = 0;
+      this.raf = 0;
+      this.bind();
+      window.addEventListener("resize", () => {
+        if (this.editorOpen) this.resize();
+      });
+    }
+
+    bind() {
+      els.exit.addEventListener("click", () => this.requestExit());
+      els.save.addEventListener("click", () => this.saveFlow(true));
+      els.tools.addEventListener("click", (event) => {
+        const actionButton = event.target.closest("[data-act]");
+        if (actionButton) {
+          if (actionButton.dataset.act === "undo") this.undo();
+          else if (actionButton.dataset.act === "redo") this.redo();
+          return;
+        }
+        const button = event.target.closest("[data-tool]");
+        if (!button) return;
+        this.setTool(button.dataset.tool);
+      });
+      els.materials.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-mat]");
+        if (!button) return;
+        this.setMaterial(button.dataset.mat);
+      });
+      els.back.addEventListener("click", () => this.closeSelect());
+      els.startBtn.addEventListener("click", () => this.startSelected());
+      els.selectOverlay.addEventListener("click", (event) => {
+        if (event.target === els.selectOverlay) this.closeSelect();
+      });
+      els.dialog.addEventListener("click", (event) => {
+        if (event.target === els.dialog) this.resolveDialog(null);
+      });
+      els.dialogInput.addEventListener("keydown", (event) => {
+        if ((event.code === "Enter" || event.code === "NumpadEnter") && !els.dialog.hidden) {
+          event.preventDefault();
+          const primary = els.dialogActions.querySelector(".primary-btn");
+          if (primary && !primary.disabled) primary.click();
+        }
+      });
+      els.descInput.addEventListener("keydown", (event) => {
+        if ((event.code === "Enter" || event.code === "NumpadEnter") && !els.dialog.hidden) {
+          event.preventDefault();
+          const primary = els.dialogActions.querySelector(".primary-btn");
+          if (primary && !primary.disabled) primary.click();
+        }
+      });
+      els.canvas.addEventListener("pointerdown", (event) => this.onPointerDown(event));
+      els.canvas.addEventListener("pointermove", (event) => this.onPointerMove(event));
+      els.canvas.addEventListener("pointerup", () => this.onPointerUp());
+      els.canvas.addEventListener("pointercancel", () => this.onPointerUp());
+      els.canvas.addEventListener("pointerleave", () => {
+        this.pointer.inside = false;
+      });
+      window.addEventListener("keydown", (event) => {
+        if (!this.editorOpen) return;
+        if (!els.dialog.hidden) {
+          if (event.code === "Escape") {
+            event.preventDefault();
+            this.resolveDialog(null);
+          }
+          return;
+        }
+        if (event.code === "Escape") {
+          event.preventDefault();
+          this.requestExit();
+        }
+      });
+    }
+
+    // ---------- 编辑器开关 ----------
+    openEditor() {
+      if (this.editorOpen || this.selectOpen) return;
+      this.editorOpen = true;
+      this.blocks = [];
+      this.nextBlockId = 1;
+      this.selected = null;
+      this.group = [];
+      this.groupBounds = null;
+      this.past = [];
+      this.future = [];
+      this.dirty = false;
+      this.drag = null;
+      this.setTool("place");
+      els.overlay.hidden = false;
+      this.resize();
+      this.startLoop();
+      this.updateToolUI();
+    }
+
+    closeEditor() {
+      this.editorOpen = false;
+      els.overlay.hidden = true;
+      window.cancelAnimationFrame(this.raf);
+    }
+
+    closeAll() {
+      this.resolveDialog(null);
+      this.closeEditor();
+      this.closeSelect();
+    }
+
+    // ---------- 自制星域选择界面 ----------
+    openSelect() {
+      game.reloadCustomMaps();
+      game.renderModeUI();
+      this.renderCards();
+      this.selectOpen = true;
+      els.selectOverlay.hidden = false;
+    }
+
+    closeSelect() {
+      this.selectOpen = false;
+      els.selectOverlay.hidden = true;
+    }
+
+    renderCards() {
+      game.reloadCustomMaps();
+      const maps = game.customMaps;
+      if (!maps.some((map) => map.id === this.customSelectedId)) {
+        this.customSelectedId = maps.length ? maps[0].id : null;
+      }
+      els.cards.replaceChildren();
+      els.empty.hidden = maps.length > 0;
+      for (const map of maps) {
+        const card = document.createElement("div");
+        card.className = `map-card custom-map-card${map.id === this.customSelectedId ? " selected" : ""}`;
+        card.style.setProperty("--swatch", "#ad8cff");
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-pressed", String(map.id === this.customSelectedId));
+        card.tabIndex = 0;
+        card.innerHTML = `<span class="map-swatch"></span><strong></strong><p></p><span class="card-actions"><button type="button" class="card-btn" data-act="rename">${I18N.t("customSelect.rename")}</button><button type="button" class="card-btn danger" data-act="delete">${I18N.t("customSelect.delete")}</button></span>`;
+        card.querySelector("strong").textContent = map.name;
+        card.querySelector("p").textContent = map.desc || I18N.t("customSelect.blocks", { n: map.blocks.length });
+        card.addEventListener("click", (event) => {
+          const action = event.target.closest("[data-act]");
+          if (action) {
+            event.stopPropagation();
+            if (action.dataset.act === "rename") this.renameMap(map.id);
+            else this.deleteMap(map.id);
+            return;
+          }
+          this.selectCustom(map.id);
+        });
+        card.addEventListener("keydown", (event) => {
+          if (event.code === "Enter" || event.code === "Space") {
+            event.preventDefault();
+            this.selectCustom(map.id);
+          }
+        });
+        els.cards.appendChild(card);
+      }
+      if (maps.length) {
+        const randomCard = document.createElement("div");
+        randomCard.className = "map-card custom-map-card random-card";
+        randomCard.style.setProperty("--swatch", "#ad8cff");
+        randomCard.setAttribute("role", "button");
+        randomCard.tabIndex = 0;
+        randomCard.innerHTML = `<span class="map-swatch"></span><strong>${I18N.t("map.random.name")}</strong><p>${I18N.t("map.random.desc")}</p>`;
+        randomCard.addEventListener("click", () => this.selectCustomRandom());
+        randomCard.addEventListener("keydown", (event) => {
+          if (event.code === "Enter" || event.code === "Space") {
+            event.preventDefault();
+            this.selectCustomRandom();
+          }
+        });
+        els.cards.appendChild(randomCard);
+      }
+      els.startBtn.disabled = !this.customSelectedId;
+    }
+
+    selectCustomRandom() {
+      const maps = game.customMaps;
+      if (!maps.length) return;
+      this.customSelectedId = maps[Math.floor(Math.random() * maps.length)].id;
+      game.audio.tone(480, 0.08, "sine", 0.018, 720);
+      this.renderCards();
+    }
+
+    selectCustom(id) {
+      if (!game.customMaps.some((map) => map.id === id)) return;
+      this.customSelectedId = id;
+      game.audio.tone(480, 0.08, "sine", 0.018, 720);
+      this.renderCards();
+    }
+
+    startSelected() {
+      if (!this.customSelectedId) return;
+      const result = game.startCustomRun(this.customSelectedId);
+      if (result === "disabled") {
+        toast(I18N.t("custom.blockedText"), "#ff9dab");
+        return;
+      }
+      if (result) this.closeSelect();
+    }
+
+    async renameMap(id) {
+      const maps = loadMaps();
+      const map = maps.find((entry) => entry.id === id);
+      if (!map) return;
+      const choice = await this.showDialog({
+        eyebrow: "CUSTOM SECTOR",
+        title: I18N.t("custom.renameTitle"),
+        input: { value: map.name, placeholder: I18N.t("custom.namePlaceholder") },
+        input2: { value: typeof map.desc === "string" ? map.desc : "", placeholder: I18N.t("custom.descPlaceholder") },
+        buttons: [
+          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+          { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
+        ]
+      });
+      if (choice !== "save") return;
+      const name = els.dialogInput.value.trim();
+      if (!name) return;
+      map.name = name;
+      map.desc = els.descInput.value.trim();
+      saveMaps(maps);
+      game.reloadCustomMaps();
+      this.renderCards();
+      toast(I18N.t("custom.renamed"));
+    }
+
+    async deleteMap(id) {
+      const maps = loadMaps();
+      const map = maps.find((entry) => entry.id === id);
+      if (!map) return;
+      const choice = await this.showDialog({
+        eyebrow: "CUSTOM SECTOR",
+        title: I18N.t("custom.deleteTitle"),
+        text: I18N.t("custom.deleteText", { name: map.name }),
+        buttons: [
+          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+          { label: I18N.t("custom.delete"), value: "delete", className: "danger-btn" }
+        ]
+      });
+      if (choice !== "delete") return;
+      saveMaps(maps.filter((entry) => entry.id !== id));
+      game.reloadCustomMaps();
+      this.renderCards();
+      toast(I18N.t("custom.deleted"), "#ff9dab");
+    }
+
+    // ---------- 退出 / 保存流程 ----------
+    async requestExit() {
+      if (!this.dirty) {
+        this.closeEditor();
+        return;
+      }
+      const choice = await this.showDialog({
+        eyebrow: "CUSTOM SECTOR",
+        title: I18N.t("custom.unsavedTitle"),
+        text: I18N.t("custom.unsavedText"),
+        buttons: [
+          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+          { label: I18N.t("custom.discard"), value: "discard", className: "secondary-btn" },
+          { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
+        ]
+      });
+      if (choice === "discard") {
+        this.closeEditor();
+      } else if (choice === "save") {
+        const saved = await this.saveFlow(false);
+        if (saved) {
+          this.closeEditor();
+          this.openSelect();
+        }
+      }
+    }
+
+    checkPlayable() {
+      const cols = Math.ceil(WORLD_WIDTH / REACH_CELL);
+      const rows = Math.ceil(WORLD_HEIGHT / REACH_CELL);
+      const total = cols * rows;
+      const obstacles = this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }));
+      const blocked = new Uint8Array(total);
+      for (let idx = 0; idx < total; idx += 1) {
+        const x = (idx % cols) * REACH_CELL + REACH_CELL / 2;
+        const y = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
+        if (x > WORLD_WIDTH || y > WORLD_HEIGHT || obstacles.some((obstacle) => distToRect(x, y, obstacle) < 1)) blocked[idx] = 1;
+      }
+      const label = new Int16Array(total).fill(-1);
+      const queue = [];
+      let bestLabel = -1;
+      let bestSize = 0;
+      let nextLabel = 0;
+      for (let start = 0; start < total; start += 1) {
+        if (blocked[start] || label[start] !== -1) continue;
+        let size = 0;
+        label[start] = nextLabel;
+        queue.push(start);
+        while (queue.length) {
+          const idx = queue.pop();
+          size += 1;
+          if (idx % cols > 0 && !blocked[idx - 1] && label[idx - 1] === -1) { label[idx - 1] = nextLabel; queue.push(idx - 1); }
+          if (idx % cols < cols - 1 && !blocked[idx + 1] && label[idx + 1] === -1) { label[idx + 1] = nextLabel; queue.push(idx + 1); }
+          if (idx - cols >= 0 && !blocked[idx - cols] && label[idx - cols] === -1) { label[idx - cols] = nextLabel; queue.push(idx - cols); }
+          if (idx + cols < total && !blocked[idx + cols] && label[idx + cols] === -1) { label[idx + cols] = nextLabel; queue.push(idx + cols); }
+        }
+        if (size > bestSize) { bestSize = size; bestLabel = nextLabel; }
+        nextLabel += 1;
+      }
+      if (bestSize < MIN_PLAYABLE_CELLS) return false;
+      for (let idx = 0; idx < total; idx += 1) {
+        if (label[idx] !== bestLabel) continue;
+        const x = (idx % cols) * REACH_CELL + REACH_CELL / 2;
+        const y = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
+        if (x > WORLD_WIDTH || y > WORLD_HEIGHT) continue;
+        if (obstacles.every((obstacle) => distToRect(x, y, obstacle) >= 24)) return true;
+      }
+      return false;
+    }
+
+    async saveFlow(fromButton) {
+      if (!this.blocks.length) {
+        toast(I18N.t("custom.needBlocks"), "#ff9dab");
+        return false;
+      }
+      if (!this.checkPlayable()) {
+        toast(I18N.t("custom.noSpawn"), "#ff9dab");
+        return false;
+      }
+      const choice = await this.showDialog({
+        eyebrow: "CUSTOM SECTOR",
+        title: I18N.t("custom.nameTitle"),
+        input: { value: this.suggestName(), placeholder: I18N.t("custom.namePlaceholder") },
+        input2: { value: "", placeholder: I18N.t("custom.descPlaceholder") },
+        buttons: [
+          { label: I18N.t("custom.cancel"), value: null, className: "secondary-btn" },
+          { label: I18N.t("custom.confirm"), value: "save", className: "primary-btn" }
+        ]
+      });
+      if (choice !== "save") return false;
+      const name = els.dialogInput.value.trim();
+      if (!name) return false;
+      const maps = loadMaps();
+      maps.push({
+        id: `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        desc: els.descInput.value.trim(),
+        blocks: this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0 }))
+      });
+      saveMaps(maps);
+      game.reloadCustomMaps();
+      this.dirty = false;
+      if (fromButton) {
+        toast(I18N.t("custom.saved"));
+        this.closeEditor();
+        this.openSelect();
+      }
+      return true;
+    }
+
+    suggestName() {
+      const count = loadMaps().length + 1;
+      return I18N.t("custom.nameSuggestion", { n: count });
+    }
+
+    // ---------- 通用对话框 ----------
+    showDialog({ eyebrow, title, text = "", input = null, input2 = null, buttons }) {
+      if (this.dialogResolver) this.dialogResolver(null);
+      return new Promise((resolve) => {
+        this.dialogResolver = resolve;
+        els.dialogEyebrow.textContent = eyebrow;
+        els.dialogTitle.textContent = title;
+        els.dialogText.hidden = !text;
+        els.dialogText.textContent = text;
+        els.dialogInput.hidden = !input;
+        els.dialogInput.value = input ? input.value : "";
+        els.dialogInput.placeholder = input ? input.placeholder || "" : "";
+        els.descInput.hidden = !input2;
+        els.descInput.value = input2 ? input2.value : "";
+        els.descInput.placeholder = input2 ? input2.placeholder || "" : "";
+        els.dialogActions.replaceChildren();
+        for (const definition of buttons) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = definition.className || "secondary-btn";
+          button.textContent = definition.label;
+          button.addEventListener("click", () => this.resolveDialog(definition.value));
+          els.dialogActions.appendChild(button);
+        }
+        if (input) {
+          els.dialogInput.oninput = () => {
+            const primary = els.dialogActions.querySelector(".primary-btn");
+            if (primary) primary.disabled = !els.dialogInput.value.trim();
+          };
+          els.dialogInput.oninput();
+        }
+        els.dialog.hidden = false;
+        if (input) {
+          window.setTimeout(() => {
+            els.dialogInput.focus();
+            els.dialogInput.select();
+          }, 30);
+        }
+      });
+    }
+
+    resolveDialog(value) {
+      els.dialog.hidden = true;
+      els.dialogInput.oninput = null;
+      els.descInput.oninput = null;
+      if (this.dialogResolver) {
+        const resolver = this.dialogResolver;
+        this.dialogResolver = null;
+        resolver(value);
+      }
+    }
+
+    // ---------- 工具 ----------
+    setTool(tool) {
+      this.tool = tool;
+      this.drag = null;
+      if (tool !== "select") {
+        this.selected = null;
+        this.group = [];
+        this.groupBounds = null;
+      }
+      this.updateToolUI();
+    }
+
+    updateToolUI() {
+      els.tools.querySelectorAll("[data-tool]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tool === this.tool);
+      });
+      els.save.disabled = this.blocks.length === 0;
+      els.undo.disabled = this.past.length === 0;
+      els.redo.disabled = this.future.length === 0;
+    }
+
+    setMaterial(material) {
+      if (!BLOCKS[material]) return;
+      this.material = material;
+      els.materials.querySelectorAll("[data-mat]").forEach((button) => {
+        button.classList.toggle("selected", button.dataset.mat === material);
+      });
+    }
+
+    // ---------- 画布坐标 ----------
+    resize() {
+      const rect = els.canvas.getBoundingClientRect();
+      this.width = Math.max(1, rect.width);
+      this.height = Math.max(1, rect.height);
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      els.canvas.width = Math.round(this.width * this.dpr);
+      els.canvas.height = Math.round(this.height * this.dpr);
+      this.scale = Math.min(this.width / WORLD_WIDTH, this.height / WORLD_HEIGHT);
+      this.offsetX = (this.width - WORLD_WIDTH * this.scale) / 2;
+      this.offsetY = (this.height - WORLD_HEIGHT * this.scale) / 2;
+    }
+
+    updatePointer(event) {
+      const rect = els.canvas.getBoundingClientRect();
+      this.pointer.x = event.clientX - rect.left;
+      this.pointer.y = event.clientY - rect.top;
+      this.pointer.inside = true;
+    }
+
+    worldPoint() {
+      return {
+        x: Math.max(0, Math.min(WORLD_WIDTH, (this.pointer.x - this.offsetX) / this.scale)),
+        y: Math.max(0, Math.min(WORLD_HEIGHT, (this.pointer.y - this.offsetY) / this.scale))
+      };
+    }
+
+    ghostBlock() {
+      const point = this.worldPoint();
+      const spec = BLOCKS[this.material];
+      const hw = spec.width / 2;
+      const hh = spec.height / 2;
+      const rotated = !!spec.rot;
+      const extX = rotated ? hh : hw;
+      const extY = rotated ? hw : hh;
+      const centerX = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round(point.x / SNAP) * SNAP));
+      const centerY = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round(point.y / SNAP) * SNAP));
+      return { id: 0, x: centerX - hw, y: centerY - hh, width: spec.width, height: spec.height, rot: spec.rot || 0 };
+    }
+
+    fullyOverlaps(a, b) {
+      const cxA = a.x + a.width / 2;
+      const cyA = a.y + a.height / 2;
+      const cxB = b.x + b.width / 2;
+      const cyB = b.y + b.height / 2;
+      if (Math.abs(cxA - cxB) > 0.5 || Math.abs(cyA - cyB) > 0.5) return false;
+      if (Math.abs(a.width - b.width) > 0.5 || Math.abs(a.height - b.height) > 0.5) return false;
+      const diff = ((((a.rot || 0) - (b.rot || 0)) % 180) + 180) % 180;
+      return diff < 0.5;
+    }
+
+    handlePos(block) {
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      const rad = (block.rot || 0) * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const ly = -(hh + HANDLE_OFFSET_PX / this.scale);
+      return {
+        x: block.x + hw - ly * sin,
+        y: block.y + hh + ly * cos
+      };
+    }
+
+    handleHitRadius() {
+      return 15 / this.scale;
+    }
+
+    hitBlockAt(wx, wy) {
+      for (let i = this.blocks.length - 1; i >= 0; i -= 1) {
+        const block = this.blocks[i];
+        const hw = block.width / 2;
+        const hh = block.height / 2;
+        const dx = wx - (block.x + hw);
+        const dy = wy - (block.y + hh);
+        const rad = (block.rot || 0) * Math.PI / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const lx = dx * cos + dy * sin;
+        const ly = -dx * sin + dy * cos;
+        if (Math.abs(lx) <= hw && Math.abs(ly) <= hh) return block;
+      }
+      return null;
+    }
+
+    // ---------- 指针操作 ----------
+    onPointerDown(event) {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      this.updatePointer(event);
+      els.canvas.setPointerCapture(event.pointerId);
+      const point = this.worldPoint();
+      if (this.tool === "place") {
+        const ghost = this.ghostBlock();
+        if (this.blocks.some((block) => this.fullyOverlaps(block, ghost))) {
+          toast(I18N.t("custom.overlapBlocked"), "#ff9dab");
+          return;
+        }
+        this.pushHistory();
+        this.blocks.push({ ...ghost, id: this.nextBlockId });
+        this.nextBlockId += 1;
+        this.dirty = true;
+        this.updateToolUI();
+      } else if (this.tool === "erase") {
+        const hit = this.hitBlockAt(point.x, point.y);
+        if (hit) {
+          this.pushHistory();
+          this.removeBlock(hit);
+        }
+        this.drag = { mode: "erase", lastX: point.x, lastY: point.y, historyPushed: !!hit };
+      } else {
+        if (this.group.length >= 2 && this.groupBounds) {
+          if (Math.hypot(point.x - this.groupBounds.handle.x, point.y - this.groupBounds.handle.y) <= this.handleHitRadius()) {
+            this.drag = { mode: "groupRotate", startBlocks: this.group.map((block) => ({ ...block })), historyPushed: false };
+            return;
+          }
+          if (Math.hypot(point.x - this.groupBounds.trash.x, point.y - this.groupBounds.trash.y) <= this.handleHitRadius()) {
+            this.pushHistory();
+            for (const block of this.group) {
+              this.blocks.splice(this.blocks.indexOf(block), 1);
+            }
+            this.group = [];
+            this.groupBounds = null;
+            this.dirty = true;
+            this.updateToolUI();
+            return;
+          }
+        }
+        const handle = this.selected ? this.handlePos(this.selected) : null;
+        if (handle && Math.hypot(point.x - handle.x, point.y - handle.y) <= this.handleHitRadius()) {
+          this.drag = { block: this.selected, mode: "rotate", historyPushed: false };
+          return;
+        }
+        const trash = this.selected ? this.trashPos(this.selected) : null;
+        if (trash && Math.hypot(point.x - trash.x, point.y - trash.y) <= this.handleHitRadius()) {
+          this.pushHistory();
+          this.removeBlock(this.selected);
+          return;
+        }
+        const hit = this.hitBlockAt(point.x, point.y);
+        if (hit) {
+          if (this.group.includes(hit)) {
+            this.drag = { mode: "groupMove", startX: point.x, startY: point.y, startBlocks: this.group.map((block) => ({ ...block })), moved: false, historyPushed: false };
+          } else {
+            this.selectSingle(hit);
+            this.drag = { block: hit, mode: "move", startX: point.x, startY: point.y, origX: hit.x, origY: hit.y, moved: false, historyPushed: false };
+          }
+        } else {
+          this.drag = { mode: "box", startX: point.x, startY: point.y, endX: point.x, endY: point.y };
+        }
+        this.updateToolUI();
+      }
+    }
+
+    onPointerMove(event) {
+      this.updatePointer(event);
+      if (!this.drag) return;
+      const point = this.worldPoint();
+      const drag = this.drag;
+      if (drag.mode === "erase") {
+        const from = { x: drag.lastX, y: drag.lastY };
+        drag.lastX = point.x;
+        drag.lastY = point.y;
+        const distance = Math.hypot(point.x - from.x, point.y - from.y);
+        const steps = Math.max(1, Math.ceil(distance / 24));
+        for (let s = 0; s <= steps; s += 1) {
+          const t = s / steps;
+          const hit = this.hitBlockAt(from.x + (point.x - from.x) * t, from.y + (point.y - from.y) * t);
+          if (hit) {
+            if (!drag.historyPushed) {
+              this.pushHistory();
+              drag.historyPushed = true;
+            }
+            this.removeBlock(hit);
+          }
+        }
+        return;
+      }
+      if (drag.mode === "box") {
+        drag.endX = point.x;
+        drag.endY = point.y;
+        return;
+      }
+      if (drag.mode === "groupRotate") {
+        const bounds = this.groupBounds;
+        const dx = point.x - bounds.cx;
+        const dy = point.y - bounds.cy;
+        if (dx * dx + dy * dy < 2304) return;
+        const deg = (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
+        const snapped = ((Math.round(deg / ROT_SNAP) * ROT_SNAP) % 360 + 360) % 360;
+        const rad = snapped * Math.PI / 180;
+        const cosR = Math.cos(rad);
+        const sinR = Math.sin(rad);
+        const candidates = drag.startBlocks.map((block) => {
+          const ox = block.x + block.width / 2 - bounds.cx;
+          const oy = block.y + block.height / 2 - bounds.cy;
+          const nx = bounds.cx + ox * cosR - oy * sinR;
+          const ny = bounds.cy + ox * sinR + oy * cosR;
+          return { x: nx - block.width / 2, y: ny - block.height / 2, width: block.width, height: block.height, rot: (((block.rot || 0) + snapped) % 360 + 360) % 360 };
+        });
+        if (candidates.some((candidate) => !this.inWorld(candidate))) return;
+        if (candidates.some((candidate) => this.blocks.some((other) => !this.group.includes(other) && this.fullyOverlaps(other, candidate)))) return;
+        if (!drag.historyPushed) {
+          this.pushHistory();
+          drag.historyPushed = true;
+        }
+        this.group.forEach((block, index) => {
+          block.x = candidates[index].x;
+          block.y = candidates[index].y;
+          block.rot = candidates[index].rot;
+        });
+        this.dirty = true;
+        return;
+      }
+      if (drag.mode === "rotate") {
+        const block = drag.block;
+        const cx = block.x + block.width / 2;
+        const cy = block.y + block.height / 2;
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        if (dx * dx + dy * dy < 2304) return;
+        const deg = (Math.atan2(dy, dx) * 180 / Math.PI) + 90;
+        const snapped = ((Math.round(deg / ROT_SNAP) * ROT_SNAP) % 360 + 360) % 360;
+        if (snapped !== (block.rot || 0)) {
+          const candidate = { ...block, rot: snapped };
+          const blocked = this.blocks.some((other) => other !== block && this.fullyOverlaps(other, candidate));
+          if (!blocked) {
+            if (!drag.historyPushed) {
+              this.pushHistory();
+              drag.historyPushed = true;
+            }
+            block.rot = snapped;
+            this.dirty = true;
+          }
+        }
+        return;
+      }
+      if (drag.mode === "groupMove") {
+        const dx = point.x - drag.startX;
+        const dy = point.y - drag.startY;
+        if (!drag.moved && dx * dx + dy * dy < 400) return;
+        drag.moved = true;
+        const sx = Math.round(dx / SNAP) * SNAP;
+        const sy = Math.round(dy / SNAP) * SNAP;
+        const candidates = drag.startBlocks.map((block) => ({
+          x: block.x + sx,
+          y: block.y + sy,
+          width: block.width,
+          height: block.height,
+          rot: block.rot || 0
+        }));
+        if (candidates.some((candidate) => !this.inWorld(candidate))) return;
+        if (candidates.some((candidate) => this.blocks.some((other) => !this.group.includes(other) && this.fullyOverlaps(other, candidate)))) return;
+        if (!drag.historyPushed) {
+          this.pushHistory();
+          drag.historyPushed = true;
+        }
+        this.group.forEach((block, index) => {
+          block.x = candidates[index].x;
+          block.y = candidates[index].y;
+        });
+        this.computeGroupBounds();
+        this.dirty = true;
+        return;
+      }
+      const dx = point.x - drag.startX;
+      const dy = point.y - drag.startY;
+      if (!drag.moved && dx * dx + dy * dy < 400) return;
+      drag.moved = true;
+      const block = drag.block;
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      const rotated = ((block.rot || 0) % 180) !== 0;
+      const extX = rotated ? hh : hw;
+      const extY = rotated ? hw : hh;
+      const cx = Math.min(WORLD_WIDTH - extX, Math.max(extX, Math.round((drag.origX + hw + dx) / SNAP) * SNAP));
+      const cy = Math.min(WORLD_HEIGHT - extY, Math.max(extY, Math.round((drag.origY + hh + dy) / SNAP) * SNAP));
+      const candidate = { x: cx - hw, y: cy - hh, width: block.width, height: block.height, rot: block.rot || 0 };
+      const blocked = this.blocks.some((other) => other !== block && this.fullyOverlaps(other, candidate));
+      if (!blocked) {
+        if (!drag.historyPushed) {
+          this.pushHistory();
+          drag.historyPushed = true;
+        }
+        block.x = candidate.x;
+        block.y = candidate.y;
+        this.dirty = true;
+      }
+    }
+
+    onPointerUp() {
+      if (this.drag && this.drag.mode === "box") this.finishBoxSelection();
+      if (this.drag && this.drag.mode === "groupRotate") this.computeGroupBounds();
+      this.drag = null;
+    }
+
+    finishBoxSelection() {
+      const drag = this.drag;
+      const x = Math.min(drag.startX, drag.endX);
+      const y = Math.min(drag.startY, drag.endY);
+      const width = Math.abs(drag.endX - drag.startX);
+      const height = Math.abs(drag.endY - drag.startY);
+      const inside = this.blocks.filter((block) => {
+        const cx = block.x + block.width / 2;
+        const cy = block.y + block.height / 2;
+        return cx >= x && cx <= x + width && cy >= y && cy <= y + height;
+      });
+      if (inside.length >= 2) {
+        this.selected = null;
+        this.group = inside;
+        this.computeGroupBounds();
+      } else if (inside.length === 1) {
+        this.selectSingle(inside[0]);
+      } else {
+        this.clearSelection();
+      }
+      this.updateToolUI();
+    }
+
+    selectSingle(block) {
+      this.selected = block;
+      this.group = [];
+      this.groupBounds = null;
+    }
+
+    clearSelection() {
+      this.selected = null;
+      this.group = [];
+      this.groupBounds = null;
+    }
+
+    computeGroupBounds() {
+      if (this.group.length < 2) {
+        this.groupBounds = null;
+        return;
+      }
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const block of this.group) {
+        const aabb = this.rotatedAABB(block);
+        minX = Math.min(minX, aabb.x);
+        minY = Math.min(minY, aabb.y);
+        maxX = Math.max(maxX, aabb.x + aabb.width);
+        maxY = Math.max(maxY, aabb.y + aabb.height);
+      }
+      const cx = (minX + maxX) / 2;
+      const offset = HANDLE_OFFSET_PX / this.scale;
+      this.groupBounds = {
+        cx,
+        cy: (minY + maxY) / 2,
+        handle: { x: cx, y: minY - offset },
+        trash: { x: cx, y: maxY + offset }
+      };
+    }
+
+    rotatedAABB(block) {
+      if (!block.rot) return { x: block.x, y: block.y, width: block.width, height: block.height };
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      const rad = block.rot * Math.PI / 180;
+      const cos = Math.abs(Math.cos(rad));
+      const sin = Math.abs(Math.sin(rad));
+      const extentX = hw * cos + hh * sin;
+      const extentY = hw * sin + hh * cos;
+      return { x: block.x + hw - extentX, y: block.y + hh - extentY, width: extentX * 2, height: extentY * 2 };
+    }
+
+    inWorld(block) {
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      const rotated = ((block.rot || 0) % 180) !== 0;
+      const extX = rotated ? hh : hw;
+      const extY = rotated ? hw : hh;
+      const cx = block.x + hw;
+      const cy = block.y + hh;
+      return cx - extX >= 0 && cx + extX <= WORLD_WIDTH && cy - extY >= 0 && cy + extY <= WORLD_HEIGHT;
+    }
+
+    trashPos(block) {
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      const rad = (block.rot || 0) * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const ly = hh + HANDLE_OFFSET_PX / this.scale;
+      return {
+        x: block.x + hw - ly * sin,
+        y: block.y + hh + ly * cos
+      };
+    }
+
+    removeBlock(block) {
+      this.blocks.splice(this.blocks.indexOf(block), 1);
+      if (this.selected === block) this.selected = null;
+      if (this.group.includes(block)) {
+        this.group = [];
+        this.groupBounds = null;
+      }
+      this.dirty = true;
+      this.updateToolUI();
+    }
+
+    snapshotBlocks() {
+      return this.blocks.map((block) => ({ x: block.x, y: block.y, width: block.width, height: block.height, rot: block.rot || 0, id: block.id }));
+    }
+
+    pushHistory() {
+      this.past.push(this.snapshotBlocks());
+      if (this.past.length > 100) this.past.shift();
+      this.future = [];
+      this.updateToolUI();
+    }
+
+    restoreBlocks(list) {
+      this.blocks = list.map((block) => ({ ...block }));
+      this.nextBlockId = this.blocks.reduce((max, block) => Math.max(max, block.id), 0) + 1;
+      this.clearSelection();
+      this.dirty = true;
+      this.updateToolUI();
+    }
+
+    undo() {
+      if (!this.past.length) return;
+      this.future.push(this.snapshotBlocks());
+      this.restoreBlocks(this.past.pop());
+    }
+
+    redo() {
+      if (!this.future.length) return;
+      this.past.push(this.snapshotBlocks());
+      this.restoreBlocks(this.future.pop());
+    }
+
+    // ---------- 渲染 ----------
+    startLoop() {
+      const tick = () => {
+        if (!this.editorOpen) return;
+        this.render();
+        this.raf = window.requestAnimationFrame(tick);
+      };
+      window.cancelAnimationFrame(this.raf);
+      this.raf = window.requestAnimationFrame(tick);
+    }
+
+    render() {
+      const context = this.context;
+      context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      context.clearRect(0, 0, this.width, this.height);
+      context.fillStyle = "#0d0a1a";
+      context.fillRect(0, 0, this.width, this.height);
+      context.save();
+      context.translate(this.offsetX, this.offsetY);
+      context.scale(this.scale, this.scale);
+      context.lineWidth = 1 / this.scale;
+      context.strokeStyle = "rgba(150, 120, 200, 0.07)";
+      context.beginPath();
+      for (let x = 0; x <= WORLD_WIDTH; x += 60) {
+        context.moveTo(x, 0);
+        context.lineTo(x, WORLD_HEIGHT);
+      }
+      for (let y = 0; y <= WORLD_HEIGHT; y += 60) {
+        context.moveTo(0, y);
+        context.lineTo(WORLD_WIDTH, y);
+      }
+      context.stroke();
+      context.strokeStyle = "rgba(173, 140, 255, 0.4)";
+      context.lineWidth = 2 / this.scale;
+      context.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+      for (const block of this.blocks) {
+        if (block === this.selected || this.group.includes(block)) continue;
+        this.drawBlock(context, block, false, 1);
+      }
+      if (this.selected) this.drawBlock(context, this.selected, true, 1);
+      for (const block of this.group) this.drawBlock(context, block, true, 1);
+      if (this.tool === "select") {
+        if (this.selected) {
+          this.drawRotationHandle(context, this.selected);
+          this.drawTrashIcon(context, this.trashPos(this.selected));
+        } else if (this.group.length >= 2 && this.groupBounds) {
+          this.drawGroupHandle(context, this.groupBounds);
+          this.drawTrashIcon(context, this.groupBounds.trash);
+        }
+        if (this.drag && this.drag.mode === "box") {
+          const x = Math.min(this.drag.startX, this.drag.endX);
+          const y = Math.min(this.drag.startY, this.drag.endY);
+          const w = Math.abs(this.drag.endX - this.drag.startX);
+          const h = Math.abs(this.drag.endY - this.drag.startY);
+          context.fillStyle = "rgba(100, 251, 210, 0.08)";
+          context.fillRect(x, y, w, h);
+          context.strokeStyle = "#64fbd2";
+          context.lineWidth = 2 / this.scale;
+          context.strokeRect(x, y, w, h);
+        }
+      }
+      if (this.tool === "place" && this.pointer.inside) {
+        const ghost = this.ghostBlock();
+        const blocked = this.blocks.some((block) => this.fullyOverlaps(block, ghost));
+        this.drawBlock(context, ghost, false, 0.5, blocked ? "#ff6178" : "#64fbd2");
+      }
+      context.restore();
+    }
+
+    drawBlock(context, block, selected, alpha, outline = null) {
+      context.save();
+      context.globalAlpha = alpha;
+      const hw = block.width / 2;
+      const hh = block.height / 2;
+      context.translate(block.x + hw, block.y + hh);
+      context.rotate((block.rot || 0) * Math.PI / 180);
+      context.fillStyle = selected ? "#1d3a38" : "#152334";
+      context.fillRect(-hw, -hh, block.width, block.height);
+      context.strokeStyle = outline || (selected ? "#64fbd2" : "#ad8cff");
+      context.lineWidth = (selected ? 3 : 2) / this.scale;
+      context.strokeRect(-hw + 1.5, -hh + 1.5, block.width - 3, block.height - 3);
+      context.fillStyle = selected ? "rgba(100, 251, 210, 0.5)" : "rgba(255, 209, 102, 0.32)";
+      for (let x = -hw + 12; x < hw - 12; x += 28) context.fillRect(x, -hh + 8, 14, 3);
+      context.restore();
+    }
+
+    drawHandleKnob(context, x, y) {
+      context.fillStyle = "#64fbd2";
+      context.beginPath();
+      context.arc(x, y, 9 / this.scale, 0, Math.PI * 2);
+      context.fill();
+      const r = 4.5 / this.scale;
+      const start = -Math.PI * 0.6;
+      const end = Math.PI * 1.05;
+      context.strokeStyle = "#0d2a24";
+      context.lineWidth = 1.7 / this.scale;
+      context.lineCap = "round";
+      context.beginPath();
+      context.arc(x, y, r, start, end);
+      context.stroke();
+      const tipX = x + Math.cos(end) * r;
+      const tipY = y + Math.sin(end) * r;
+      const dir = end + Math.PI / 2;
+      context.fillStyle = "#0d2a24";
+      context.beginPath();
+      context.moveTo(tipX + Math.cos(dir) * 2.3 / this.scale, tipY + Math.sin(dir) * 2.3 / this.scale);
+      context.lineTo(tipX - Math.cos(dir) * 2.3 / this.scale, tipY - Math.sin(dir) * 2.3 / this.scale);
+      context.lineTo(tipX + Math.cos(end) * 3 / this.scale, tipY + Math.sin(end) * 3 / this.scale);
+      context.closePath();
+      context.fill();
+    }
+
+    drawRotationHandle(context, block) {
+      const cx = block.x + block.width / 2;
+      const cy = block.y + block.height / 2;
+      const handle = this.handlePos(block);
+      context.strokeStyle = "rgba(100, 251, 210, 0.7)";
+      context.lineWidth = 2 / this.scale;
+      context.beginPath();
+      context.moveTo(cx, cy);
+      context.lineTo(handle.x, handle.y);
+      context.stroke();
+      this.drawHandleKnob(context, handle.x, handle.y);
+    }
+
+    drawGroupHandle(context, bounds) {
+      context.strokeStyle = "rgba(100, 251, 210, 0.7)";
+      context.lineWidth = 2 / this.scale;
+      context.beginPath();
+      context.moveTo(bounds.cx, bounds.cy);
+      context.lineTo(bounds.handle.x, bounds.handle.y);
+      context.stroke();
+      this.drawHandleKnob(context, bounds.handle.x, bounds.handle.y);
+    }
+
+    drawTrashIcon(context, point) {
+      const x = point.x;
+      const y = point.y;
+      context.fillStyle = "#ff6178";
+      context.beginPath();
+      context.arc(x, y, 9 / this.scale, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "#3a0d14";
+      context.lineWidth = 1.4 / this.scale;
+      context.lineCap = "round";
+      context.beginPath();
+      context.moveTo(x - 3.8 / this.scale, y - 2.2 / this.scale);
+      context.lineTo(x + 3.8 / this.scale, y - 2.2 / this.scale);
+      context.moveTo(x - 3 / this.scale, y - 2.2 / this.scale);
+      context.lineTo(x - 2.2 / this.scale, y + 4 / this.scale);
+      context.lineTo(x + 2.2 / this.scale, y + 4 / this.scale);
+      context.lineTo(x + 3 / this.scale, y - 2.2 / this.scale);
+      context.moveTo(x - 1.2 / this.scale, y - 3.4 / this.scale);
+      context.lineTo(x + 1.2 / this.scale, y - 3.4 / this.scale);
+      context.stroke();
+    }
+  }
+
+  window.mapEditor = new MapEditor();
+})();

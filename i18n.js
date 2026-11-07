@@ -198,7 +198,39 @@ I18N.zh = {
     bgmSaved: "背景音乐已设置",
     bgmError: "音乐保存失败",
     musicSizeError: "音乐文件不能超过 20MB",
-    mapComing: "功能开发中，敬请期待"
+mapComing: "功能开发中，敬请期待",
+    unsavedTitle: "未保存的改动",
+    unsavedText: "当前星域还没有保存，要保存它吗？",
+    nameTitle: "命名星域",
+    namePlaceholder: "输入星域名称",
+    descPlaceholder: "介绍小字（可选）",
+    nameSuggestion: "自制星域 {n}",
+    confirm: "保存",
+    cancel: "取消",
+    discard: "不保存",
+    delete: "删除",
+    deleteTitle: "删除星域",
+    deleteText: "删除「{name}」？此操作无法撤销。",
+    renameTitle: "重命名星域",
+    renamed: "已重命名",
+    deleted: "已删除",
+    saved: "已保存",
+    needBlocks: "请至少放置一个方块",
+    overlapBlocked: "不能与已有方块完全重叠",
+    noSpawn: "该星域没有足够的出生空间，请调整方块后重试",
+    undo: "撤回",
+    redo: "重做",
+    blockedText: "该模式已在设置中关闭自制星域"
+  },
+  customSelect: {
+    blocks: "{n} 个方块",
+    rename: "重命名",
+    delete: "删除"
+  },
+  mapCustomCard: {
+    name: "自制星域",
+    desc: "制作你的专属星域",
+    count: "{n} 张地图"
   }
 };
 
@@ -333,7 +365,39 @@ I18N.en = {
     bgmSaved: "Background music set",
     bgmError: "Failed to save music",
     musicSizeError: "Music file must be under 20MB",
-    mapComing: "Coming soon — stay tuned"
+mapComing: "Coming soon — stay tuned",
+    unsavedTitle: "Unsaved changes",
+    unsavedText: "This sector is not saved yet. Save it before leaving?",
+    nameTitle: "Name Your Sector",
+    namePlaceholder: "Enter a sector name",
+    descPlaceholder: "Short description (optional)",
+    nameSuggestion: "Custom Sector {n}",
+    confirm: "Save",
+    cancel: "Cancel",
+    discard: "Discard",
+    delete: "Delete",
+    deleteTitle: "Delete Sector",
+    deleteText: "Delete “{name}”? This cannot be undone.",
+    renameTitle: "Rename Sector",
+    renamed: "Renamed",
+    deleted: "Deleted",
+    saved: "Saved",
+    needBlocks: "Place at least one block first",
+    overlapBlocked: "Cannot fully overlap an existing block",
+    noSpawn: "This sector has no room to spawn — adjust the blocks and try again",
+    undo: "Undo",
+    redo: "Redo",
+    blockedText: "Custom sectors are turned off for this mode in Settings"
+  },
+  customSelect: {
+    blocks: "{n} blocks",
+    rename: "Rename",
+    delete: "Delete"
+  },
+  mapCustomCard: {
+    name: "Custom Sectors",
+    desc: "Make your own sector",
+    count: "{n} maps"
   }
 };
 

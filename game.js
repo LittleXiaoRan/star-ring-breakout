@@ -108,6 +108,10 @@ const ui = {
   endlessBossToggle: byId("endless-boss-toggle"),
   endlessSettingsCloseButton: byId("endless-settings-close-btn"),
   endlessBestRound: byId("endless-best-round"),
+  endlessCustomToggle: byId("endless-custom-toggle"),
+  customModeToggle: byId("custom-mode-toggle"),
+  customEndlessGearButton: byId("custom-endless-gear-btn"),
+  customStartButton: byId("custom-select-start-btn"),
   startButton: byId("start-btn"),
   restartButton: byId("restart-btn"),
   menuButton: byId("menu-btn"),
@@ -122,6 +126,7 @@ const ui = {
   settingsLookToggle: byId("settings-look-toggle"),
   settingsAutoFireToggle: byId("settings-auto-fire-toggle"),
   settingsUnlimitedToggle: byId("settings-unlimited-toggle"),
+  settingsCustomToggle: byId("settings-custom-toggle"),
   settingsLangToggle: byId("settings-lang-toggle"),
   settingsCloseButton: byId("settings-close-btn"),
   resetConfirm: byId("reset-overlay"),
@@ -289,6 +294,8 @@ const ENEMY_STATS = {
 
 const WORLD_WIDTH = 2400;
 const WORLD_HEIGHT = 1600;
+const REACH_CELL = 30;
+const MIN_PLAYABLE_CELLS = 16;
 const VIEW_LONG_SIDE = 31 * 40;
 const FURNACE_WARNING_TIME = 6;
 const BUFF_DEFS = {
@@ -311,32 +318,109 @@ const MAP_DEFS = [
 const BOSS_ARENA = { id: "core", nameKey: "map.core.name", swatch: "#ffd166", bg: "#100d16", grid: "rgba(200, 170, 100, 0.06)" };
 
 function circleTouchesRect(x, y, radius, rect) {
-  const nearestX = clamp(x, rect.x, rect.x + rect.width);
-  const nearestY = clamp(y, rect.y, rect.y + rect.height);
-  return (x - nearestX) ** 2 + (y - nearestY) ** 2 < radius * radius;
+  if (!rect.rot) {
+    const nearestX = clamp(x, rect.x, rect.x + rect.width);
+    const nearestY = clamp(y, rect.y, rect.y + rect.height);
+    return (x - nearestX) ** 2 + (y - nearestY) ** 2 < radius * radius;
+  }
+  const hw = rect.width / 2;
+  const hh = rect.height / 2;
+  const dx = x - (rect.x + hw);
+  const dy = y - (rect.y + hh);
+  const cos = Math.cos(rect.rot);
+  const sin = Math.sin(rect.rot);
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  const nx = clamp(lx, -hw, hw);
+  const ny = clamp(ly, -hh, hh);
+  return (lx - nx) ** 2 + (ly - ny) ** 2 < radius * radius;
+}
+
+function distanceToRect(x, y, rect) {
+  if (!rect.rot) {
+    const nearestX = clamp(x, rect.x, rect.x + rect.width);
+    const nearestY = clamp(y, rect.y, rect.y + rect.height);
+    return Math.hypot(x - nearestX, y - nearestY);
+  }
+  const hw = rect.width / 2;
+  const hh = rect.height / 2;
+  const dx = x - (rect.x + hw);
+  const dy = y - (rect.y + hh);
+  const cos = Math.cos(rect.rot);
+  const sin = Math.sin(rect.rot);
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  return Math.hypot(lx - clamp(lx, -hw, hw), ly - clamp(ly, -hh, hh));
+}
+
+function rotRectAABB(rect) {
+  if (!rect.rot) return rect;
+  const hw = rect.width / 2;
+  const hh = rect.height / 2;
+  const cos = Math.abs(Math.cos(rect.rot));
+  const sin = Math.abs(Math.sin(rect.rot));
+  const extentX = hw * cos + hh * sin;
+  const extentY = hw * sin + hh * cos;
+  return { x: rect.x + hw - extentX, y: rect.y + hh - extentY, width: extentX * 2, height: extentY * 2 };
 }
 
 function resolveCircleRect(entity, radius, rect) {
-  const nearestX = clamp(entity.x, rect.x, rect.x + rect.width);
-  const nearestY = clamp(entity.y, rect.y, rect.y + rect.height);
-  const dx = entity.x - nearestX;
-  const dy = entity.y - nearestY;
-  const distance = Math.hypot(dx, dy);
-  if (distance >= radius) return false;
-  if (distance > 0) {
-    const push = radius - distance;
-    entity.x += dx / distance * push;
-    entity.y += dy / distance * push;
+  if (!rect.rot) {
+    const nearestX = clamp(entity.x, rect.x, rect.x + rect.width);
+    const nearestY = clamp(entity.y, rect.y, rect.y + rect.height);
+    const dx = entity.x - nearestX;
+    const dy = entity.y - nearestY;
+    const distance = Math.hypot(dx, dy);
+    if (distance >= radius) return false;
+    if (distance > 0) {
+      const push = radius - distance;
+      entity.x += dx / distance * push;
+      entity.y += dy / distance * push;
+      return true;
+    }
+    const sides = [
+      { distance: Math.abs(entity.x - rect.x), axis: "x", value: rect.x - radius },
+      { distance: Math.abs(rect.x + rect.width - entity.x), axis: "x", value: rect.x + rect.width + radius },
+      { distance: Math.abs(entity.y - rect.y), axis: "y", value: rect.y - radius },
+      { distance: Math.abs(rect.y + rect.height - entity.y), axis: "y", value: rect.y + rect.height + radius }
+    ];
+    sides.sort((a, b) => a.distance - b.distance);
+    entity[sides[0].axis] = sides[0].value;
     return true;
   }
-  const sides = [
-    { distance: Math.abs(entity.x - rect.x), axis: "x", value: rect.x - radius },
-    { distance: Math.abs(rect.x + rect.width - entity.x), axis: "x", value: rect.x + rect.width + radius },
-    { distance: Math.abs(entity.y - rect.y), axis: "y", value: rect.y - radius },
-    { distance: Math.abs(rect.y + rect.height - entity.y), axis: "y", value: rect.y + rect.height + radius }
-  ];
-  sides.sort((a, b) => a.distance - b.distance);
-  entity[sides[0].axis] = sides[0].value;
+  const hw = rect.width / 2;
+  const hh = rect.height / 2;
+  const dx = entity.x - (rect.x + hw);
+  const dy = entity.y - (rect.y + hh);
+  const cos = Math.cos(rect.rot);
+  const sin = Math.sin(rect.rot);
+  const lx = dx * cos + dy * sin;
+  const ly = -dx * sin + dy * cos;
+  const nx = clamp(lx, -hw, hw);
+  const ny = clamp(ly, -hh, hh);
+  const ddx = lx - nx;
+  const ddy = ly - ny;
+  const distance = Math.hypot(ddx, ddy);
+  if (distance >= radius) return false;
+  let pushX;
+  let pushY;
+  if (distance > 0) {
+    const push = radius - distance;
+    pushX = ddx / distance * push;
+    pushY = ddy / distance * push;
+  } else {
+    const penetrations = [
+      { depth: lx + hw + radius, vx: -1, vy: 0 },
+      { depth: hw - lx + radius, vx: 1, vy: 0 },
+      { depth: ly + hh + radius, vx: 0, vy: -1 },
+      { depth: hh - ly + radius, vx: 0, vy: 1 }
+    ];
+    penetrations.sort((a, b) => a.depth - b.depth);
+    pushX = penetrations[0].vx * penetrations[0].depth;
+    pushY = penetrations[0].vy * penetrations[0].depth;
+  }
+  entity.x += pushX * cos - pushY * sin;
+  entity.y += pushX * sin + pushY * cos;
   return true;
 }
 
@@ -513,6 +597,14 @@ class Input {
   bindKeyboard() {
     const blocked = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"];
     window.addEventListener("keydown", (event) => {
+      if (window.mapEditor && window.mapEditor.selectOpen) {
+        if (event.code === "Escape") {
+          event.preventDefault();
+          window.mapEditor.closeSelect();
+        }
+        return;
+      }
+      if (window.mapEditor && window.mapEditor.editorOpen) return;
       if ([ui.homeButton, ui.pauseMenuButton].includes(event.target) && ["Enter", "Space"].includes(event.code)) return;
       if (!event.repeat && event.code === "Escape") {
         if (!ui.endlessSettings.hidden) {
@@ -757,6 +849,16 @@ class Game {
     this.endlessDmgMul = 1;
     this.endlessSpdMul = 1;
     this.endlessMapIndex = 0;
+    this.runMapOverride = null;
+    this.customMaps = this.loadCustomMaps();
+    this.customCfg = { classic: true, endless: true };
+    try {
+      const cfg = JSON.parse(localStorage.getItem("star-ring-custom-cfg") || "null");
+      if (cfg && typeof cfg === "object") {
+        if (typeof cfg.classic === "boolean") this.customCfg.classic = cfg.classic;
+        if (typeof cfg.endless === "boolean") this.customCfg.endless = cfg.endless;
+      }
+    } catch {}
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
     this.inBossArena = false;
     this.mapSelectOpen = false;
@@ -786,6 +888,7 @@ class Game {
     this.updateLookControl();
     this.updateAutoFireControl();
     this.updateUnlimitedControl();
+    this.updateCustomControls();
     this.updateLangControl();
     this.renderModeUI();
     this.refreshMenuRecords();
@@ -800,23 +903,27 @@ class Game {
     ui.startButton.addEventListener("click", () => this.openMapSelect());
     ui.mapStartButton.addEventListener("click", () => this.start());
     ui.mapBackButton.addEventListener("click", () => this.closeMapSelect());
-    ui.modeToggle.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-mode]");
-      if (!button) return;
-      this.setMode(button.dataset.mode);
-    });
-    ui.modeToggle.addEventListener("keydown", (event) => {
-      if (event.code !== "Enter" && event.code !== "Space") return;
-      if (event.target.closest("#endless-gear-btn")) return;
-      const option = event.target.closest("[data-mode]");
-      if (!option) return;
-      event.preventDefault();
-      this.setMode(option.dataset.mode);
-    });
-    ui.endlessGearButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      this.openEndlessSettings();
-    });
+    const bindModeToggle = (toggle, gearButton) => {
+      toggle.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-mode]");
+        if (!button) return;
+        this.setMode(button.dataset.mode);
+      });
+      toggle.addEventListener("keydown", (event) => {
+        if (event.code !== "Enter" && event.code !== "Space") return;
+        if (event.target.closest(".gear-btn")) return;
+        const option = event.target.closest("[data-mode]");
+        if (!option) return;
+        event.preventDefault();
+        this.setMode(option.dataset.mode);
+      });
+      gearButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.openEndlessSettings();
+      });
+    };
+    bindModeToggle(ui.modeToggle, ui.endlessGearButton);
+    bindModeToggle(ui.customModeToggle, ui.customEndlessGearButton);
     ui.endlessMapToggle.addEventListener("click", (event) => {
       const button = event.target.closest("[data-endless-map]");
       if (!button) return;
@@ -847,7 +954,10 @@ class Game {
     ui.resumeButton.addEventListener("click", () => this.resume());
     ui.menuButton.addEventListener("click", () => this.goToMenu());
     ui.homeButton.addEventListener("click", () => this.goToMenu());
-    ui.customMapEntry.addEventListener("click", () => this.showDevToast());
+ui.customMapEntry.addEventListener("click", () => {
+      if (window.mapEditor) window.mapEditor.openEditor();
+      else this.showDevToast();
+    });
     ui.pauseButton.addEventListener("click", () => this.togglePause());
     ui.settingsButton.addEventListener("click", () => this.openSettings());
     ui.settingsSoundToggle.addEventListener("click", (event) => {
@@ -892,6 +1002,16 @@ class Game {
         localStorage.setItem("star-ring-unlimited", this.unlimited ? "on" : "off");
       } catch {}
       this.updateUnlimitedControl();
+    });
+    ui.settingsCustomToggle.addEventListener("click", () => {
+      this.customCfg.classic = !this.customCfg.classic;
+      this.saveCustomCfg();
+      this.updateCustomControls();
+    });
+    ui.endlessCustomToggle.addEventListener("click", () => {
+      this.customCfg.endless = !this.customCfg.endless;
+      this.saveCustomCfg();
+      this.updateCustomControls();
     });
     ui.settingsLangToggle.addEventListener("click", () => {
       I18N.setLang(I18N.lang === "zh" ? "en" : "zh");
@@ -1064,8 +1184,8 @@ class Game {
     if (this.state === "playing") ui.pauseButton.textContent = I18N.t("hud.pause");
     else if (this.state === "paused") ui.pauseButton.textContent = I18N.t("hud.resume");
     if (this.map) {
-      ui.minimapName.textContent = I18N.t(this.map.nameKey);
-      ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
+      ui.minimapName.textContent = this.mapName();
+      ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : this.mapName();
     }
     if (this.mapSelectOpen) this.renderMapCards();
     this.renderModeUI();
@@ -1297,7 +1417,8 @@ class Game {
         const x1 = Math.min(x0 + cell, this.world.width);
         const y1 = Math.min(y0 + cell, this.world.height);
         for (const obstacle of this.obstacles) {
-          if (x1 > obstacle.x - margin && x0 < obstacle.x + obstacle.width + margin && y1 > obstacle.y - margin && y0 < obstacle.y + obstacle.height + margin) {
+          const bounds = rotRectAABB(obstacle);
+          if (x1 > bounds.x - margin && x0 < bounds.x + bounds.width + margin && y1 > bounds.y - margin && y0 < bounds.y + bounds.height + margin) {
             blocked[r * cols + c] = 1;
             break;
           }
@@ -1360,7 +1481,7 @@ class Game {
       const px = x0 + (x1 - x0) * t;
       const py = y0 + (y1 - y0) * t;
       for (const obstacle of this.obstacles) {
-        if (px > obstacle.x - clearance && px < obstacle.x + obstacle.width + clearance && py > obstacle.y - clearance && py < obstacle.y + obstacle.height + clearance) return false;
+        if (circleTouchesRect(px, py, clearance, obstacle)) return false;
       }
     }
     return true;
@@ -1401,9 +1522,7 @@ class Game {
         const px = enemy.x + ca * lookahead * step / 4;
         const py = enemy.y + sa * lookahead * step / 4;
         for (const obstacle of this.obstacles) {
-          const cx = clamp(px, obstacle.x, obstacle.x + obstacle.width);
-          const cy = clamp(py, obstacle.y, obstacle.y + obstacle.height);
-          const distance = Math.hypot(px - cx, py - cy) - clearance;
+          const distance = distanceToRect(px, py, obstacle) - clearance;
           if (distance < minClear) minClear = distance;
         }
         for (const orbiter of this.orbiters) {
@@ -1646,6 +1765,8 @@ class Game {
 
   createMap() {
     this.obstacles = [];
+    this.reachGrid = null;
+    this.customUnplayable = false;
     this.flow = null;
     this.flowTimer = 0;
     this.safePlatforms = [];
@@ -1676,7 +1797,19 @@ class Game {
       this.laser = { timer: 18, state: "idle", time: 0, hit: false };
       return;
     }
-    if (this.map.id === "harbor") {
+    if (this.map.custom) {
+      this.obstacles = this.map.blocks.map((block) => ({
+        x: block.x,
+        y: block.y,
+        width: block.width,
+        height: block.height,
+        rot: (block.rot || 0) * Math.PI / 180,
+        custom: true
+      }));
+      this.reachGrid = this.buildReachGrid();
+      this.customUnplayable = this.reachGrid.best.size < MIN_PLAYABLE_CELLS;
+      this.powerupPoints = [{ x: 300, y: 300 }, { x: 2100, y: 1300 }, { x: 2100, y: 300 }, { x: 300, y: 1300 }];
+    } else if (this.map.id === "harbor") {
       this.obstacles = [
         { x: 470, y: 310, width: 210, height: 48 },
         { x: 470, y: 310, width: 48, height: 190 },
@@ -1737,6 +1870,126 @@ class Game {
     }
   }
 
+  buildReachGrid() {
+    const cols = Math.ceil(this.world.width / REACH_CELL);
+    const rows = Math.ceil(this.world.height / REACH_CELL);
+    const total = cols * rows;
+    const blocked = new Uint8Array(total);
+    for (let idx = 0; idx < total; idx += 1) {
+      const x = (idx % cols) * REACH_CELL + REACH_CELL / 2;
+      const y = ((idx / cols) | 0) * REACH_CELL + REACH_CELL / 2;
+      if (x > this.world.width || y > this.world.height || this.obstacles.some((obstacle) => distanceToRect(x, y, obstacle) < 1)) blocked[idx] = 1;
+    }
+    const label = new Int16Array(total).fill(-1);
+    const queue = [];
+    let best = { size: 0, label: -1 };
+    let nextLabel = 0;
+    for (let start = 0; start < total; start += 1) {
+      if (blocked[start] || label[start] !== -1) continue;
+      let size = 0;
+      label[start] = nextLabel;
+      queue.push(start);
+      while (queue.length) {
+        const idx = queue.pop();
+        size += 1;
+        if (idx % cols > 0 && !blocked[idx - 1] && label[idx - 1] === -1) {
+          label[idx - 1] = nextLabel;
+          queue.push(idx - 1);
+        }
+        if (idx % cols < cols - 1 && !blocked[idx + 1] && label[idx + 1] === -1) {
+          label[idx + 1] = nextLabel;
+          queue.push(idx + 1);
+        }
+        if (idx - cols >= 0 && !blocked[idx - cols] && label[idx - cols] === -1) {
+          label[idx - cols] = nextLabel;
+          queue.push(idx - cols);
+        }
+        if (idx + cols < total && !blocked[idx + cols] && label[idx + cols] === -1) {
+          label[idx + cols] = nextLabel;
+          queue.push(idx + cols);
+        }
+      }
+      if (size > best.size) best = { size, label: nextLabel };
+      nextLabel += 1;
+    }
+    return { cols, rows, label, best };
+  }
+
+  reachLabelAt(x, y) {
+    const grid = this.reachGrid;
+    const gx = Math.max(0, Math.min(grid.cols - 1, Math.floor(x / REACH_CELL)));
+    const gy = Math.max(0, Math.min(grid.rows - 1, Math.floor(y / REACH_CELL)));
+    return grid.label[gy * grid.cols + gx];
+  }
+
+  findPlayerSpawn() {
+    const grid = this.reachGrid;
+    const centerX = this.world.width / 2;
+    const centerY = this.world.height / 2;
+    let bestClear = null;
+    let bestClearDist = Infinity;
+    let bestAny = null;
+    let bestAnyDist = Infinity;
+    for (let idx = 0; idx < grid.cols * grid.rows; idx += 1) {
+      if (grid.label[idx] !== grid.best.label) continue;
+      const x = (idx % grid.cols) * REACH_CELL + REACH_CELL / 2;
+      const y = ((idx / grid.cols) | 0) * REACH_CELL + REACH_CELL / 2;
+      if (x > this.world.width || y > this.world.height) continue;
+      const dist = (x - centerX) ** 2 + (y - centerY) ** 2;
+      if (this.obstacles.every((obstacle) => distanceToRect(x, y, obstacle) >= 24)) {
+        if (dist < bestClearDist) {
+          bestClearDist = dist;
+          bestClear = { x, y };
+        }
+      }
+      if (dist < bestAnyDist) {
+        bestAnyDist = dist;
+        bestAny = { x, y };
+      }
+    }
+    return bestClear || bestAny || { x: centerX, y: centerY };
+  }
+
+  findSpawnPoint(stats) {
+    const player = this.player || { x: this.world.width / 2, y: this.world.height / 2 };
+    const margin = stats.radius + 30;
+    const playerLabel = this.reachGrid ? this.reachLabelAt(player.x, player.y) : -1;
+    const clear = (x, y) => !this.obstacles.some((obstacle) => circleTouchesRect(x, y, stats.radius + 12, obstacle));
+    const reachable = (x, y) => !this.reachGrid || playerLabel === -1 || this.reachLabelAt(x, y) === playerLabel;
+    const rings = this.reachGrid
+      ? [
+          { min: 500, max: 800, count: 12, needFar: true },
+          { min: 320, max: 500, count: 10, needFar: true },
+          { min: 0, max: 320, count: 8, needFar: false },
+          { min: 0, max: 0, count: 1, needFar: false }
+        ]
+      : [{ min: 500, max: 800, count: 12, needFar: true }];
+    let last = null;
+    for (const ring of rings) {
+      for (let attempt = 0; attempt < ring.count; attempt += 1) {
+        const angle = random(0, Math.PI * 2);
+        const distance = ring.min === ring.max ? ring.min : random(ring.min, ring.max);
+        const x = clamp(player.x + Math.cos(angle) * distance, margin, this.world.width - margin);
+        const y = clamp(player.y + Math.sin(angle) * distance, margin, this.world.height - margin);
+        const farEnough = !ring.needFar || (x - player.x) ** 2 + (y - player.y) ** 2 > 320 ** 2;
+        last = { x, y };
+        if (farEnough && clear(x, y) && reachable(x, y)) return { x, y };
+      }
+    }
+    return last || { x: clamp(player.x, margin, this.world.width - margin), y: clamp(player.y, margin, this.world.height - margin) };
+  }
+
+  showGameToast(message, color = "#64fbd2") {
+    ui.powerupToast.textContent = message;
+    ui.powerupToast.style.color = color;
+    ui.powerupToast.style.borderColor = color;
+    ui.powerupToast.hidden = false;
+    window.clearTimeout(this.devToastTimer);
+    this.devToastTimer = window.setTimeout(() => {
+      ui.powerupToast.hidden = true;
+    }, 2200);
+  }
+
   enterBossArena() {
     this.inBossArena = true;
     this.map = BOSS_ARENA;
@@ -1755,7 +2008,7 @@ class Game {
     this.powerups = [];
     this.powerupSpawnTimer = 8;
     this.powerupPointIndex = 0;
-    ui.minimapName.textContent = I18N.t(this.map.nameKey);
+    ui.minimapName.textContent = this.mapName();
     this.spawnRing(this.player.x, this.player.y, 30, 150, "#ffd166", 0.8);
   }
 
@@ -1941,12 +2194,15 @@ class Game {
   }
 
   renderModeUI() {
-    ui.modeToggle.querySelectorAll("[data-mode]").forEach((button) => {
-      button.setAttribute("aria-checked", String(button.dataset.mode === this.mode));
+    [ui.modeToggle, ui.customModeToggle].forEach((toggle) => {
+      toggle.querySelectorAll("[data-mode]").forEach((button) => {
+        button.setAttribute("aria-checked", String(button.dataset.mode === this.mode));
+      });
     });
     const endless = this.mode === "endless";
     ui.mapStartButton.textContent = endless ? I18N.t("map.startEndless") : I18N.t("map.enter");
-    if (this.state === "menu") ui.menuMapName.textContent = endless ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
+    ui.customStartButton.textContent = endless ? I18N.t("map.startEndless") : I18N.t("map.enter");
+    if (this.state === "menu") ui.menuMapName.textContent = endless ? I18N.t("mode.endless") : this.mapName();
     if (this.mapSelectOpen) this.renderMapCards();
   }
 
@@ -1969,14 +2225,81 @@ class Game {
     return base + Math.max(0, this.endlessRound - 1) * 0.5;
   }
 
+  loadCustomMaps() {
+    let saved = [];
+    try {
+      saved = JSON.parse(localStorage.getItem("star-ring-custom-maps") || "[]");
+      if (!Array.isArray(saved)) saved = [];
+    } catch {}
+    const maps = [];
+    for (const entry of saved) {
+      if (!entry || typeof entry !== "object" || !entry.id || typeof entry.name !== "string") continue;
+      const blocks = Array.isArray(entry.blocks)
+        ? entry.blocks
+            .filter((block) => block && Number.isFinite(block.x) && Number.isFinite(block.y) && Number.isFinite(block.width) && Number.isFinite(block.height) && block.width > 0 && block.height > 0)
+            .map((block) => ({
+              x: clamp(block.x, 0, this.world.width - 8),
+              y: clamp(block.y, 0, this.world.height - 8),
+              width: block.width,
+              height: block.height,
+              rot: (Math.round((Number(block.rot) || 0) / 15) % 24) * 15
+            }))
+        : [];
+      if (!blocks.length) continue;
+      maps.push({ id: entry.id, name: entry.name, desc: typeof entry.desc === "string" ? entry.desc : "", nameKey: null, descKey: null, difficulty: 0, swatch: "#ad8cff", bg: "#0d0a1a", grid: "rgba(150, 120, 200, 0.06)", custom: true, blocks });
+    }
+    return maps;
+  }
+
+  reloadCustomMaps() {
+    this.customMaps = this.loadCustomMaps();
+  }
+
+  getMap(id) {
+    return MAP_DEFS.find((map) => map.id === id) || this.customMaps.find((map) => map.id === id) || null;
+  }
+
+  mapName(map = this.map) {
+    return map.nameKey ? I18N.t(map.nameKey) : map.name;
+  }
+
+  mapPool() {
+    if (this.customCfg.endless && this.customMaps.length) return [...MAP_DEFS, ...this.customMaps];
+    return MAP_DEFS;
+  }
+
+  saveCustomCfg() {
+    try {
+      localStorage.setItem("star-ring-custom-cfg", JSON.stringify(this.customCfg));
+    } catch {}
+  }
+
+  updateCustomControls() {
+    ui.settingsCustomToggle.setAttribute("aria-checked", String(this.customCfg.classic));
+    ui.settingsCustomToggle.querySelector("span").textContent = this.customCfg.classic ? I18N.t("hud.on") : I18N.t("hud.off");
+    ui.endlessCustomToggle.setAttribute("aria-checked", String(this.customCfg.endless));
+    ui.endlessCustomToggle.querySelector("span").textContent = this.customCfg.endless ? I18N.t("hud.on") : I18N.t("hud.off");
+  }
+
+  startCustomRun(mapId) {
+    const map = this.getMap(mapId);
+    if (!map) return false;
+    const allowed = this.mode === "endless" ? this.customCfg.endless : this.customCfg.classic;
+    if (!allowed) return "disabled";
+    this.runMapOverride = map.id;
+    this.start();
+    return true;
+  }
+
   pickEndlessMap() {
-    if (this.endless.map === "random") return MAP_DEFS[Math.floor(Math.random() * MAP_DEFS.length)];
+    const pool = this.mapPool();
+    if (this.endless.map === "random") return pool[Math.floor(Math.random() * pool.length)];
     if (this.endless.map === "cycle") {
-      const map = MAP_DEFS[this.endlessMapIndex % MAP_DEFS.length];
+      const map = pool[this.endlessMapIndex % pool.length];
       this.endlessMapIndex += 1;
       return map;
     }
-    return MAP_DEFS.find((map) => map.id === this.selectedMapId);
+    return this.map;
   }
 
   startNextRound() {
@@ -2009,7 +2332,7 @@ class Game {
     this.cameraAimX = 0;
     this.cameraAimY = 0;
     this.clampCamera();
-    ui.minimapName.textContent = I18N.t(this.map.nameKey);
+    ui.minimapName.textContent = this.mapName();
     this.pendingVictory = false;
     this.endTimer = 0;
     this.intermission = 0;
@@ -2038,7 +2361,7 @@ class Game {
     if (this.state === "menu") {
       this.selectedMapId = id;
       this.map = MAP_DEFS.find((map) => map.id === id);
-      ui.menuMapName.textContent = I18N.t(this.map.nameKey);
+      ui.menuMapName.textContent = this.mapName();
       try {
         localStorage.setItem("star-ring-map", id);
       } catch {}
@@ -2067,6 +2390,15 @@ class Game {
       button.addEventListener("click", () => this.selectMap(map.id));
       ui.mapCards.appendChild(button);
     }
+    const customEntry = document.createElement("button");
+    customEntry.type = "button";
+    customEntry.className = "map-card custom-select-card";
+    customEntry.style.setProperty("--swatch", "#ad8cff");
+    customEntry.innerHTML = `<span class="map-swatch"></span><strong>${I18N.t("mapCustomCard.name")}</strong><p>${I18N.t("mapCustomCard.desc")}</p><span class="map-best">${I18N.t("mapCustomCard.count", { n: this.customMaps.length })}</span>`;
+    customEntry.addEventListener("click", () => {
+      if (window.mapEditor) window.mapEditor.openSelect();
+    });
+    ui.mapCards.appendChild(customEntry);
   }
 
   start() {
@@ -2109,18 +2441,26 @@ class Game {
     this.endlessHpMul = 1;
     this.endlessDmgMul = 1;
     this.endlessSpdMul = 1;
+    const startMap = this.runMapOverride ? this.getMap(this.runMapOverride) : this.getMap(this.selectedMapId);
+    this.runMapOverride = null;
     if (this.mode === "endless") {
       this.endlessRound = 1;
-      this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
-      this.endlessMapIndex = MAP_DEFS.findIndex((map) => map.id === this.selectedMapId) + 1;
+      this.map = startMap;
+      const pool = this.mapPool();
+      this.endlessMapIndex = (pool.findIndex((map) => map.id === startMap.id) + 1) % Math.max(1, pool.length);
     } else {
-      this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
+      this.map = startMap;
     }
     this.inBossArena = false;
     this.closeMapSelect();
-    ui.minimapName.textContent = I18N.t(this.map.nameKey);
-    ui.menuMapName.textContent = I18N.t(this.map.nameKey);
+    ui.minimapName.textContent = this.mapName();
+    ui.menuMapName.textContent = this.mapName();
     this.createMap();
+    if (this.customUnplayable) {
+      this.showGameToast(I18N.t("custom.noSpawn"), "#ff9dab");
+      this.goToMenu();
+      return;
+    }
     this.powerupSpawnTimer = 8;
     this.powerupPointIndex = 0;
     this.powerupToastTime = 0;
@@ -2179,6 +2519,13 @@ class Game {
       upgrades: {},
       buffs: Object.fromEntries(BUFF_IDS.map((id) => [id, 0]))
     };
+    if (this.reachGrid) {
+      const spawn = this.findPlayerSpawn();
+      this.player.x = spawn.x;
+      this.player.y = spawn.y;
+      this.player.prevX = spawn.x;
+      this.player.prevY = spawn.y;
+    }
     this.camera.x = this.player.x;
     this.camera.y = this.player.y;
     this.cameraAimX = 0;
@@ -2205,9 +2552,10 @@ class Game {
     this.state = "menu";
     this.audio.stopLaserPrep();
     this.input.reset();
+    if (window.mapEditor) window.mapEditor.closeAll();
     this.closeMapSelect();
     this.map = MAP_DEFS.find((map) => map.id === this.selectedMapId);
-    ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : I18N.t(this.map.nameKey);
+    ui.menuMapName.textContent = this.mode === "endless" ? I18N.t("mode.endless") : this.mapName();
     this.player = null;
     this.enemies = [];
     this.bullets = [];
@@ -2514,16 +2862,31 @@ class Game {
     if (type === "boss") {
       x = clamp(this.player.x, 280, this.world.width - 280);
       y = clamp(this.player.y - 420, 180, this.world.height - 180);
+      if (this.reachGrid) {
+        const spawnClear = !this.obstacles.some((obstacle) => circleTouchesRect(x, y, stats.radius + 12, obstacle));
+        const spawnReachable = this.reachLabelAt(x, y) === this.reachGrid.best.label;
+        if (!spawnClear || !spawnReachable) {
+          const fallback = this.findSpawnPoint(stats);
+          x = fallback.x;
+          y = fallback.y;
+        }
+      }
     } else if (x === null || y === null) {
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        const angle = random(0, Math.PI * 2);
-        const distance = random(500, 800);
-        const margin = stats.radius + 30;
-        x = clamp((this.player?.x || this.world.width / 2) + Math.cos(angle) * distance, margin, this.world.width - margin);
-        y = clamp((this.player?.y || this.world.height / 2) + Math.sin(angle) * distance, margin, this.world.height - margin);
-        const farEnough = !this.player || (x - this.player.x) ** 2 + (y - this.player.y) ** 2 > 320 ** 2;
-        const clear = !this.obstacles.some((obstacle) => circleTouchesRect(x, y, stats.radius + 12, obstacle));
-        if (farEnough && clear) break;
+      if (this.reachGrid) {
+        const spawn = this.findSpawnPoint(stats);
+        x = spawn.x;
+        y = spawn.y;
+      } else {
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const angle = random(0, Math.PI * 2);
+          const distance = random(500, 800);
+          const margin = stats.radius + 30;
+          x = clamp((this.player?.x || this.world.width / 2) + Math.cos(angle) * distance, margin, this.world.width - margin);
+          y = clamp((this.player?.y || this.world.height / 2) + Math.sin(angle) * distance, margin, this.world.height - margin);
+          const farEnough = !this.player || (x - this.player.x) ** 2 + (y - this.player.y) ** 2 > 320 ** 2;
+          const clear = !this.obstacles.some((obstacle) => circleTouchesRect(x, y, stats.radius + 12, obstacle));
+          if (farEnough && clear) break;
+        }
       }
     }
     const scale = type === "boss" || type === "mite" || type === "prism" ? 1 : 1 + (this.wave - 1) * 0.13;
@@ -2775,7 +3138,7 @@ class Game {
     if (enemy.dead || enemy.spawnIn > 0) return;
     if (enemy.laserCooldown > 0) return;
     enemy.laserCooldown = 1.2;
-    enemy.laserAngle = angle + random(-15, 15) * Math.PI / 180;
+enemy.laserAngle = angle + random(-15, 15) * Math.PI / 180;
     this.firePrismLaser(enemy);
   }
 
@@ -2891,9 +3254,15 @@ class Game {
         this.bullets.splice(i, 1);
         continue;
       }
-      if (this.obstacles.some((obstacle) => circleTouchesRect(bullet.x, bullet.y, bullet.radius, obstacle)) || this.orbiters.some((orbiter) => this.circleTouchesOrbiter(bullet.x, bullet.y, bullet.radius, orbiter))) {
+      const hitObstacle = this.obstacles.find((obstacle) => circleTouchesRect(bullet.x, bullet.y, bullet.radius, obstacle));
+      const hitOrbiter = this.orbiters.some((orbiter) => this.circleTouchesOrbiter(bullet.x, bullet.y, bullet.radius, orbiter));
+      if (hitOrbiter || (hitObstacle && !(hitObstacle.custom && bullet.bounces > 0))) {
         this.burst(bullet.x, bullet.y, "#6f8ca0", 3, 70, 2);
         this.bullets.splice(i, 1);
+        continue;
+      }
+      if (hitObstacle) {
+        this.reflectBullet(bullet, hitObstacle);
         continue;
       }
       let removed = false;
@@ -2913,6 +3282,54 @@ class Game {
       }
       if (!removed && bullet.life <= 0) this.bullets.splice(i, 1);
     }
+  }
+
+  reflectBullet(bullet, obstacle) {
+    const hw = obstacle.width / 2;
+    const hh = obstacle.height / 2;
+    const cx = obstacle.x + hw;
+    const cy = obstacle.y + hh;
+    const rot = obstacle.rot || 0;
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    const dx = bullet.x - cx;
+    const dy = bullet.y - cy;
+    const lx = dx * cos + dy * sin;
+    const ly = -dx * sin + dy * cos;
+    const nx = clamp(lx, -hw, hw);
+    const ny = clamp(ly, -hh, hh);
+    let nlx;
+    let nly;
+    const ddx = lx - nx;
+    const ddy = ly - ny;
+    if (ddx * ddx + ddy * ddy > 1e-6) {
+      const len = Math.hypot(ddx, ddy);
+      nlx = ddx / len;
+      nly = ddy / len;
+    } else {
+      const penetrations = [
+        { depth: lx + hw, vx: -1, vy: 0 },
+        { depth: hw - lx, vx: 1, vy: 0 },
+        { depth: ly + hh, vx: 0, vy: -1 },
+        { depth: hh - ly, vx: 0, vy: 1 }
+      ];
+      penetrations.sort((a, b) => a.depth - b.depth);
+      nlx = penetrations[0].vx;
+      nly = penetrations[0].vy;
+    }
+    const wnx = nlx * cos - nly * sin;
+    const wny = nlx * sin + nly * cos;
+    const dot = bullet.vx * wnx + bullet.vy * wny;
+    if (dot < 0) {
+      bullet.vx -= 2 * dot * wnx;
+      bullet.vy -= 2 * dot * wny;
+    }
+    const contactX = cx + nx * cos - ny * sin;
+    const contactY = cy + nx * sin + ny * cos;
+    bullet.x = contactX + wnx * (bullet.radius + 2);
+    bullet.y = contactY + wny * (bullet.radius + 2);
+    bullet.bounces -= 1;
+    this.burst(bullet.x, bullet.y, "#64fbd2", 3, 75, 2);
   }
 
   updateEnemyBullets(dt) {
@@ -3383,16 +3800,16 @@ class Game {
         } catch {}
       }
     } else {
-      const mapBest = Number(this.mapBestScores[this.selectedMapId]) || 0;
+      const mapBest = Number(this.mapBestScores[this.map.id]) || 0;
       if (this.score > mapBest) {
-        this.mapBestScores[this.selectedMapId] = this.score;
+        this.mapBestScores[this.map.id] = this.score;
         try {
           localStorage.setItem("star-ring-map-best-scores", JSON.stringify(this.mapBestScores));
         } catch {}
       }
     }
-    if (victory && !this.badges.includes(this.selectedMapId)) {
-      this.badges.push(this.selectedMapId);
+    if (victory && !this.map.custom && !this.badges.includes(this.map.id)) {
+      this.badges.push(this.map.id);
       try {
         localStorage.setItem("star-ring-badges", JSON.stringify(this.badges));
       } catch {}
@@ -3888,21 +4305,36 @@ class Game {
   }
 
   drawObstacles(context) {
-    for (const obstacle of this.obstacles) {
+    const drawBody = (width, height) => {
       context.fillStyle = "#152334";
-      context.fillRect(obstacle.x, obstacle.y, obstacle.width, obstacle.height);
+      context.fillRect(0, 0, width, height);
       context.strokeStyle = "#385166";
       context.lineWidth = 2;
-      context.strokeRect(obstacle.x + 1, obstacle.y + 1, obstacle.width - 2, obstacle.height - 2);
+      context.strokeRect(1, 1, width - 2, height - 2);
       context.fillStyle = "rgba(255, 209, 102, 0.32)";
-      if (obstacle.width > obstacle.height) {
-        for (let x = obstacle.x + 12; x < obstacle.x + obstacle.width - 12; x += 28) context.fillRect(x, obstacle.y + 8, 14, 3);
+      if (width > height) {
+        for (let x = 12; x < width - 12; x += 28) context.fillRect(x, 8, 14, 3);
       } else {
-        for (let y = obstacle.y + 12; y < obstacle.y + obstacle.height - 12; y += 28) context.fillRect(obstacle.x + 8, y, 3, 14);
+        for (let y = 12; y < height - 12; y += 28) context.fillRect(8, y, 3, 14);
       }
       context.fillStyle = "#668297";
-      context.fillRect(obstacle.x + 6, obstacle.y + 6, 3, 3);
-      context.fillRect(obstacle.x + obstacle.width - 9, obstacle.y + obstacle.height - 9, 3, 3);
+      context.fillRect(6, 6, 3, 3);
+      context.fillRect(width - 9, height - 9, 3, 3);
+    };
+    for (const obstacle of this.obstacles) {
+      if (!obstacle.rot) {
+        context.save();
+        context.translate(obstacle.x, obstacle.y);
+        drawBody(obstacle.width, obstacle.height);
+        context.restore();
+      } else {
+        context.save();
+        context.translate(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2);
+        context.rotate(obstacle.rot);
+        context.translate(-obstacle.width / 2, -obstacle.height / 2);
+        drawBody(obstacle.width, obstacle.height);
+        context.restore();
+      }
     }
   }
 
@@ -4399,7 +4831,17 @@ class Game {
     this.drawMapFeatures(context, true);
     context.restore();
     context.fillStyle = "#263b4d";
-    for (const obstacle of this.obstacles) context.fillRect(obstacle.x * scaleX, obstacle.y * scaleY, Math.max(1, obstacle.width * scaleX), Math.max(1, obstacle.height * scaleY));
+    for (const obstacle of this.obstacles) {
+      if (!obstacle.rot) {
+        context.fillRect(obstacle.x * scaleX, obstacle.y * scaleY, Math.max(1, obstacle.width * scaleX), Math.max(1, obstacle.height * scaleY));
+      } else {
+        context.save();
+        context.translate((obstacle.x + obstacle.width / 2) * scaleX, (obstacle.y + obstacle.height / 2) * scaleY);
+        context.rotate(obstacle.rot);
+        context.fillRect(-obstacle.width / 2 * scaleX, -obstacle.height / 2 * scaleY, Math.max(1, obstacle.width * scaleX), Math.max(1, obstacle.height * scaleY));
+        context.restore();
+      }
+    }
     context.fillStyle = "rgba(173, 140, 255, 0.35)";
     for (const point of this.powerupPoints) context.fillRect(point.x * scaleX - 1, point.y * scaleY - 1, 2, 2);
     for (const powerup of this.powerups) {
