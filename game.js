@@ -2188,6 +2188,7 @@ class Game {
   }
 
   goToMenu() {
+    if (["playing", "paused"].includes(this.state) && this.player) this.recordBest(false);
     this.state = "menu";
     this.audio.stopLaserPrep();
     this.input.reset();
@@ -3321,6 +3322,27 @@ class Game {
     ui.pause.hidden = true;
     ui.upgrade.hidden = true;
     ui.announcement.hidden = true;
+    const isNewBest = this.recordBest(victory);
+    this.lastResult = { victory, isNewBest };
+    this.applyResultPanel();
+    ui.result.hidden = false;
+    document.body.classList.remove("game-active");
+    if (victory) {
+      if (this.audio.mode === "67") {
+        this.audio.playFile("胜利");
+      } else {
+        this.audio.tone(440, 0.35, "sine", 0.035, 660);
+        window.setTimeout(() => this.audio.tone(660, 0.4, "sine", 0.03, 990), 180);
+      }
+    } else if (this.audio.mode === "67") {
+      this.audio.playFile("失败");
+    } else {
+      this.audio.tone(180, 0.5, "sawtooth", 0.035, 55);
+    }
+    ui.liveStatus.textContent = I18N.t(victory ? "result.victory" : "result.defeat");
+  }
+
+  recordBest(victory) {
     const endlessRun = this.mode === "endless";
     const prevBest = endlessRun ? this.endlessHighScore : this.highScore;
     const isNewBest = this.score > prevBest;
@@ -3367,23 +3389,7 @@ class Game {
       } catch {}
       this.updateEndlessControls();
     }
-    this.lastResult = { victory, isNewBest };
-    this.applyResultPanel();
-    ui.result.hidden = false;
-    document.body.classList.remove("game-active");
-    if (victory) {
-      if (this.audio.mode === "67") {
-        this.audio.playFile("胜利");
-      } else {
-        this.audio.tone(440, 0.35, "sine", 0.035, 660);
-        window.setTimeout(() => this.audio.tone(660, 0.4, "sine", 0.03, 990), 180);
-      }
-    } else if (this.audio.mode === "67") {
-      this.audio.playFile("失败");
-    } else {
-      this.audio.tone(180, 0.5, "sawtooth", 0.035, 55);
-    }
-    ui.liveStatus.textContent = I18N.t(victory ? "result.victory" : "result.defeat");
+    return isNewBest;
   }
 
   applyResultPanel() {
