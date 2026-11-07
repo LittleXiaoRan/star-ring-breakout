@@ -197,7 +197,8 @@ I18N.zh = {
     bgError: "图片无效或处理失败",
     bgmSaved: "背景音乐已设置",
     bgmError: "音乐保存失败",
-    musicSizeError: "音乐文件不能超过 20MB"
+    musicSizeError: "音乐文件不能超过 20MB",
+    mapComing: "功能开发中，敬请期待"
   }
 };
 
@@ -331,7 +332,8 @@ I18N.en = {
     bgError: "Invalid image or processing failed",
     bgmSaved: "Background music set",
     bgmError: "Failed to save music",
-    musicSizeError: "Music file must be under 20MB"
+    musicSizeError: "Music file must be under 20MB",
+    mapComing: "Coming soon — stay tuned"
   }
 };
 

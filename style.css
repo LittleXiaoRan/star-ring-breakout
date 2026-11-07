@@ -166,7 +166,7 @@ body.game-active:not(.touch-mode) #game-canvas { cursor: none; }
 .buff-bar [data-buff="engine"] { color: #65a9ff; }
 .buff-bar [data-buff="magnet"] { color: #ad8cff; }
 .buff-bar [data-buff="slow"] { color: #ff7eb6; }
-.powerup-toast { position: absolute; left: 50%; bottom: 25px; transform: translateX(-50%); padding: 8px 14px; border: 1px solid rgba(100, 251, 210, 0.3); border-radius: 8px; background: rgba(8, 20, 28, 0.88); color: var(--mint); font-size: 11px; letter-spacing: 0.08em; animation: pop-in 160ms ease-out; }
+.powerup-toast { position: absolute; left: 50%; bottom: 25px; transform: translateX(-50%); padding: 8px 14px; border: 1px solid rgba(100, 251, 210, 0.3); border-radius: 8px; background: rgba(8, 20, 28, 0.88); color: var(--mint); font-size: 11px; letter-spacing: 0.08em; animation: pop-in 160ms ease-out; pointer-events: none; }
 .minimap { position: absolute; left: 20px; bottom: 18px; width: 180px; padding: 6px; border: 1px solid rgba(126, 158, 181, 0.2); border-radius: 9px; background: rgba(7, 13, 23, 0.82); }
 .minimap > div { display: flex; align-items: center; justify-content: space-between; margin: 0 1px 5px; color: #8298aa; font-size: 8px; letter-spacing: 0.08em; }
 .minimap small { color: #435d70; font-size: 7px; }
@@ -274,6 +274,13 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
 .menu-map span { color: #455e70; font-size: 9px; }
 .map-overlay { z-index: 12; align-items: flex-start; }
 .map-panel { position: relative; width: min(100%, 960px); margin: auto; flex-shrink: 0; }
+.map-title-row { margin: 4px 0 8px; }
+.map-title-row h2 { margin: 0; }
+.custom-map-entry { position: absolute; top: 14px; right: 14px; width: 156px; height: 88px; display: flex; flex-direction: column; justify-content: center; padding: 12px; border: 1px solid rgba(130, 159, 181, 0.18); border-radius: 12px; background: rgba(17, 28, 43, 0.92); color: var(--text); text-align: left; cursor: pointer; transition: 160ms ease; font-family: inherit; }
+.custom-map-entry .map-swatch { display: block; width: 100%; height: 5px; margin-bottom: 10px; border-radius: 4px; background: #ad8cff; box-shadow: 0 0 12px rgba(173, 140, 255, 0.4); }
+.custom-map-entry strong { display: block; font-size: 15px; letter-spacing: 0.04em; }
+.custom-map-entry p { margin: 6px 0 0; color: #8ba1b4; font-size: 10px; line-height: 1.5; }
+.custom-map-entry:hover { transform: translateY(-2px); border-color: rgba(173, 140, 255, 0.6); }
 .map-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
 .map-card { position: relative; min-height: 148px; padding: 16px 16px 26px; border: 1px solid rgba(130, 159, 181, 0.18); border-radius: 12px; background: rgba(17, 28, 43, 0.92); color: var(--text); text-align: left; cursor: pointer; transition: 160ms ease; }
 .map-card:hover { transform: translateY(-3px); border-color: rgba(100, 251, 210, 0.55); }
@@ -424,6 +431,8 @@ kbd { padding: 2px 5px; border: 1px solid #344759; border-bottom-width: 2px; bor
   #result-title { font-size: clamp(18px, 6.2vw, 28px); text-wrap: balance; }
   .menu-panel { padding: 24px 20px 20px; }
   .map-topbar { position: static; margin-bottom: 14px; }
+  .map-title-row { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; }
+  .custom-map-entry, .custom-map-entry:hover { position: static; transform: none; width: auto; height: auto; padding: 12px; }
   .menu-record-mode { font-size: 10px; }
   .menu-record-stat > span { font-size: 11px; }
   .menu-record-stat strong { font-size: 14px; }

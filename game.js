@@ -53,6 +53,7 @@ const ui = {
   hud: byId("hud"),
   buffBar: byId("buff-bar"),
   powerupToast: byId("powerup-toast"),
+  customMapEntry: byId("custom-map-entry"),
   minimapCanvas: byId("minimap-canvas"),
   hpText: byId("hp-text"),
   hpFill: byId("hp-fill"),
@@ -846,6 +847,7 @@ class Game {
     ui.resumeButton.addEventListener("click", () => this.resume());
     ui.menuButton.addEventListener("click", () => this.goToMenu());
     ui.homeButton.addEventListener("click", () => this.goToMenu());
+    ui.customMapEntry.addEventListener("click", () => this.showDevToast());
     ui.pauseButton.addEventListener("click", () => this.togglePause());
     ui.settingsButton.addEventListener("click", () => this.openSettings());
     ui.settingsSoundToggle.addEventListener("click", (event) => {
@@ -926,6 +928,17 @@ class Game {
     ui.powerupToast.style.borderColor = color;
     ui.powerupToast.hidden = false;
     this.powerupToastTime = 2;
+  }
+
+  showDevToast() {
+    ui.powerupToast.textContent = I18N.t("custom.mapComing");
+    ui.powerupToast.style.color = "#64fbd2";
+    ui.powerupToast.style.borderColor = "#64fbd2";
+    ui.powerupToast.hidden = false;
+    window.clearTimeout(this.devToastTimer);
+    this.devToastTimer = window.setTimeout(() => {
+      ui.powerupToast.hidden = true;
+    }, 2200);
   }
 
   initCustomFiles() {
